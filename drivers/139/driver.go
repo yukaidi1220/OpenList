@@ -310,7 +310,7 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 		var contentList []string
 		var catalogList []string
 		if srcObj.IsDir() {
-			catalogList = append(catalogList, path.Join(srcObj.GetPath(), srcObj.GetID()))
+			catalogList = append(catalogList, srcObj.GetPath())
 		} else {
 			contentList = append(contentList, path.Join(srcObj.GetPath(), srcObj.GetID()))
 		}
@@ -324,7 +324,7 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 			"contentList":   contentList,
 			"destCatalogID": dstDir.GetID(),
 			"destGroupID":   d.CloudID,
-			"destPath":      path.Join(dstDir.GetPath(), dstDir.GetID()),
+			"destPath":      dstDir.GetPath(),
 			"destType":      0,
 			"srcGroupID":    d.CloudID,
 			"srcType":       0,
@@ -827,7 +827,7 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 		}
 		pathname := "/orchestration/personalCloud/uploadAndDownload/v1.0/pcUploadFileRequest"
 		if d.isFamily() || d.Addition.Type == MetaGroup {
-			uploadPath := path.Join(dstDir.GetPath(), dstDir.GetID())
+			uploadPath := dstDir.GetPath()
 			// if dstDir is root folder
 			if dstDir.GetID() == d.RootFolderID {
 				uploadPath = d.RootPath

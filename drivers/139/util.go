@@ -347,9 +347,9 @@ func (d *Yun139) familyGetFiles(catalogID string) ([]model.Obj, error) {
 		if err != nil {
 			return nil, err
 		}
-		path := resp.Data.Path
+		dirPath := resp.Data.Path
 		if catalogID == d.RootFolderID {
-			d.RootPath = path
+			d.RootPath = dirPath
 		}
 		for _, catalog := range resp.Data.CloudCatalogList {
 			f := model.Object{
@@ -359,7 +359,7 @@ func (d *Yun139) familyGetFiles(catalogID string) ([]model.Obj, error) {
 				IsFolder: true,
 				Modified: getTime(catalog.LastUpdateTime),
 				Ctime:    getTime(catalog.CreateTime),
-				Path:     path, // 文件夹上一级的Path
+				Path:     path.Join(dirPath, catalog.CatalogID), // 文件夹自身的服务端路径
 			}
 			files = append(files, &f)
 		}
@@ -371,7 +371,7 @@ func (d *Yun139) familyGetFiles(catalogID string) ([]model.Obj, error) {
 					Size:     content.ContentSize,
 					Modified: getTime(content.LastUpdateTime),
 					Ctime:    getTime(content.CreateTime),
-					Path:     path, // 文件所在目录的Path
+					Path:     dirPath, // 文件所在目录的Path
 				},
 				Thumbnail: model.Thumbnail{Thumbnail: content.ThumbnailURL},
 				// Thumbnail: content.BigthumbnailURL,
