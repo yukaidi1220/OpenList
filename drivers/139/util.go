@@ -351,6 +351,8 @@ func (d *Yun139) familyGetFiles(catalogID string) ([]model.Obj, error) {
 		if catalogID == d.RootFolderID {
 			d.RootPath = dirPath
 		}
+		log.Infof("[139] familyGetFiles: catalogID=%s, dirPath=%s, RootFolderID=%s, RootPath=%s",
+			catalogID, dirPath, d.RootFolderID, d.RootPath)
 		for _, catalog := range resp.Data.CloudCatalogList {
 			f := model.Object{
 				ID:       catalog.CatalogID,

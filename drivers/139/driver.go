@@ -205,6 +205,8 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 		pathname := "/orchestration/personalCloud/catalog/v1.0/createCatalogExt"
 		_, err = d.post(pathname, data, nil)
 	case MetaFamily:
+		log.Infof("[139] MakeDir family: parentDir.GetID()=%s, parentDir.GetPath()=%s, dirName=%s, RootFolderID=%s, RootPath=%s",
+			parentDir.GetID(), parentDir.GetPath(), dirName, d.RootFolderID, d.RootPath)
 		data := base.Json{
 			"cloudID": d.CloudID,
 			"commonAccountInfo": base.Json{
