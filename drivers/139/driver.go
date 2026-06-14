@@ -206,12 +206,12 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 		_, err = d.post(pathname, data, nil)
 	case MetaFamily:
 		log.Infof("[139] MakeDir family: parentDir.GetID()=%s, parentDir.GetPath()=%s, dirName=%s, RootFolderID=%s, RootPath=%s",
-			parentDir.GetID(), parentDir.GetPath(), dirName, d.RootFolderID, d.RootPath)
+			parentDir.GetID(), parentDir.GetPath(), dirName, d.RootFolderID, d.getRootPath())
 		mkdirPath := parentDir.GetPath()
 		// 当根目录是配置的子目录（非家庭盘真正根目录）时，parentDir（根对象）的 Path 为空，
-		// 需要使用缓存的服务端完整路径 d.RootPath，否则 API 会将文件夹创建到家庭根目录
+		// 需要使用缓存的服务端完整路径 d.getRootPath()，否则 API 会将文件夹创建到家庭根目录
 		if mkdirPath == "" {
-			mkdirPath = d.RootPath
+			mkdirPath = d.getRootPath()
 		}
 		data := base.Json{
 			"cloudID": d.CloudID,
@@ -325,9 +325,9 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 
 		destPath := dstDir.GetPath()
 		// 当根目录是配置的子目录（非家庭盘真正根目录）时，dstDir（根对象）的 Path 为空，
-		// 需要使用缓存的服务端完整路径 d.RootPath
+		// 需要使用缓存的服务端完整路径 d.getRootPath()
 		if destPath == "" {
-			destPath = d.RootPath
+			destPath = d.getRootPath()
 		}
 		body := base.Json{
 			"catalogList": catalogList,
@@ -844,7 +844,7 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 			uploadPath := dstDir.GetPath()
 			// if dstDir is root folder
 			if dstDir.GetID() == d.RootFolderID {
-				uploadPath = d.RootPath
+				uploadPath = d.getRootPath()
 			}
 			data = d.newJson(base.Json{
 				"fileCount":    1,

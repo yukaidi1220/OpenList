@@ -672,6 +672,13 @@ func (d *Yun139) getAuthorization() string {
 	return d.Authorization
 }
 
+func (d *Yun139) getRootPath() string {
+	if d.ref != nil {
+		return d.ref.getRootPath()
+	}
+	return d.RootPath
+}
+
 func (d *Yun139) getAccount() string {
 	if d.ref != nil {
 		return d.ref.getAccount()
