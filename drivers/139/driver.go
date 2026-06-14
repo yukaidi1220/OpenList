@@ -325,11 +325,8 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 		}
 
 		destPath := dstDir.GetPath()
-		// 当根目录是配置的子目录（非家庭盘真正根目录）时，dstDir（根对象）的 Path 为空，
-		// 需要使用缓存的服务端完整路径 d.getRootPath()
-		if destPath == "" {
-			destPath = d.getRootPath()
-		}
+		// 注意：isboPost API 通过 destCatalogID 确定目标目录，
+		// destPath 保持原始值即可（根目录时为空），不要传 root:/... 格式的完整路径
 		body := base.Json{
 			"catalogList": catalogList,
 			"accountInfo": base.Json{
@@ -454,7 +451,7 @@ func (d *Yun139) Rename(ctx context.Context, srcObj model.Obj, newName string) e
 			if err != nil {
 				return err
 			}
-			if resp.Data.Result.ResultCode != "0" {
+			if resp.Data.Result.ResultCode != "0" && resp.Data.Result.ResultCode != "SUCCESS" {
 				return fmt.Errorf("failed to rename family folder: %s", resp.Data.Result.ResultDesc)
 			}
 			return nil
