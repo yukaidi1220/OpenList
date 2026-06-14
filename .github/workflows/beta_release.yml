@@ -78,6 +78,7 @@ jobs:
           body_path: CHANGELOG.md
           files: CHANGELOG.md
           prerelease: true
+          make_latest: true
           tag_name: beta
 
       - name: Upload assets to github artifact
@@ -210,6 +211,7 @@ jobs:
         with:
           files: build/compress/*
           prerelease: true
+          make_latest: true
           tag_name: beta
 
       - name: Clean illegal characters from matrix.target
