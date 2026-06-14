@@ -212,7 +212,7 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 				"accountType": 1,
 			},
 			"docLibName": dirName,
-			"path":       path.Join(parentDir.GetPath(), parentDir.GetID()),
+			"path":       parentDir.GetPath(),
 		}
 		pathname := "/orchestration/familyCloud-rebuild/cloudCatalog/v1.0/createCloudDoc"
 		_, err = d.post(pathname, data, nil)
@@ -425,7 +425,7 @@ func (d *Yun139) Rename(ctx context.Context, srcObj model.Obj, newName string) e
 				},
 				"docLibName":   newName,
 				"docLibraryID": srcObj.GetID(),
-				"path":         path.Join(srcObj.GetPath(), srcObj.GetID()),
+				"path":         srcObj.GetPath(),
 			}
 			var resp ModifyCloudDocV2Resp
 			_, err = d.andAlbumRequest(pathname, data, &resp)
