@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/OpenListTeam/OpenList/v4/drivers/base"
@@ -346,12 +347,19 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 		}
 
 		var resp CreateBatchOprTaskResp
-		_, err := d.isboPost(pathname, body, &resp)
+		rawBody, err := d.isboPost(pathname, body, &resp)
 		if err != nil {
+			// isboPost 返回错误时，可能只是 ResultCode 检查问题，打印原始响应以便排查
+			log.Warnf("[139] Move MetaFamily isboPost error: %v, rawBody: %s", err, string(rawBody))
+			// 如果请求层面成功（rawBody 不为空），且原始响应中有成功标识，不返回错误
+			if len(rawBody) > 0 && (strings.Contains(string(rawBody), `"resultCode":"0"`) || strings.Contains(string(rawBody), `"resultDesc":"SUCCESS"`)) {
+				return srcObj, nil
+			}
 			return nil, err
 		}
-		log.Debugf("[139] Move MetaFamily CreateBatchOprTaskResp.Data.Result.ResultCode: %s", resp.Data.Result.ResultCode)
-		if resp.Data.Result.ResultCode != "0" {
+		log.Debugf("[139] Move MetaFamily CreateBatchOprTaskResp: resultCode=%s, taskID=%s", resp.Data.Result.ResultCode, resp.Data.TaskID)
+		// ResultCode 可能是 "0" 或 "SUCCESS"，两者都表示成功
+		if resp.Data.Result.ResultCode != "0" && resp.Data.Result.ResultCode != "SUCCESS" && resp.Data.TaskID == "" {
 			return nil, fmt.Errorf("failed to move in family cloud: %s", resp.Data.Result.ResultDesc)
 		}
 		return srcObj, nil
