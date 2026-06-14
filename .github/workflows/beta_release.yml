@@ -16,51 +16,62 @@ jobs:
   changelog:
     name: Beta Release Changelog
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.gen-tag.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Resolve previous beta tag
+      - name: Generate release tag (Beijing time)
+        id: gen-tag
+        run: |
+          TAG=$(TZ='Asia/Shanghai' date +'%Y%m%d%H%M')
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          echo "Release tag: $TAG"
+
+      - name: Resolve previous tag
         run: |
           set -e
-          PREV_BETA_SHA=$(git ls-remote --tags origin refs/tags/beta | awk '{print $1}')
-          echo "PREV_BETA_SHA=$PREV_BETA_SHA" >> $GITHUB_ENV
-          if [ -n "$PREV_BETA_SHA" ]; then
-            echo "Found previous beta tag at: $PREV_BETA_SHA"
+          # 找到上一个匹配时间戳格式的 tag
+          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^[0-9]{12}$' | head -1 || true)
+          if [ -n "$PREV_TAG" ]; then
+            PREV_SHA=$(git rev-list -n 1 "$PREV_TAG" 2>/dev/null || true)
+            echo "PREV_SHA=$PREV_SHA" >> $GITHUB_ENV
+            echo "Found previous tag: $PREV_TAG ($PREV_SHA)"
           else
-            echo "No previous beta tag found"
+            echo "No previous timestamp tag found"
           fi
 
-      - name: Create or update ref
-        id: create-or-update-ref
+      - name: Create tag
         uses: ovsds/create-or-update-ref-action@v1
         with:
-          ref: tags/beta
+          ref: tags/${{ env.RELEASE_TAG }}
           sha: ${{ github.sha }}
 
-      - name: Generate changelog from previous beta
+      - name: Generate changelog
         id: changelog
         run: |
           set -e
           changes_file=.changes.tmp
           range=""
 
-          if [ -n "$PREV_BETA_SHA" ]; then
-            range="$PREV_BETA_SHA..$GITHUB_SHA"
+          if [ -n "${PREV_SHA:-}" ]; then
+            range="${PREV_SHA}..$GITHUB_SHA"
             git log --no-merges --pretty="- %s (%h)" "$range" > "$changes_file" || true
           else
             git log --no-merges -n 30 --pretty="- %s (%h)" > "$changes_file" || true
           fi
 
           {
-            echo "# Beta Changelog"
+            echo "# Release $RELEASE_TAG"
             echo
             if [ -n "$range" ]; then
               echo "Range: $range"
             else
-              echo "Range: latest 30 commits (no previous beta tag)"
+              echo "Range: latest 30 commits (no previous tag)"
             fi
             echo
             if [ -s "$changes_file" ]; then
@@ -72,22 +83,22 @@ jobs:
 
           rm -f "$changes_file"
 
-      - name: Upload assets to beta release
+      - name: Upload assets to release
         uses: softprops/action-gh-release@v2
         with:
           body_path: CHANGELOG.md
           files: CHANGELOG.md
           prerelease: false
           make_latest: true
-          tag_name: beta
+          tag_name: ${{ env.RELEASE_TAG }}
 
       - name: Upload assets to github artifact
         uses: actions/upload-artifact@v4
         with:
-          name: beta changelog
+          name: changelog
           path: ${{ github.workspace }}/CHANGELOG.md
           compression-level: 0
-          if-no-files-found: error # 'warn' or 'ignore' are also available, defaults to `warn`
+          if-no-files-found: error
 
   release:
     needs:
@@ -96,47 +107,47 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: "linux-amd64" # xgo linux-amd64
+          - target: "linux-amd64"
             hash: "md5-linux-amd64"
             flags: ""
             goflags: ""
-          - target: "linux-arm64" # xgo linux-arm64
+          - target: "linux-arm64"
             hash: "md5-linux-arm64"
             flags: ""
             goflags: ""
-          - target: "darwin-amd64" # xgo darwin-amd64
+          - target: "darwin-amd64"
             hash: "md5-darwin-amd64"
             flags: ""
             goflags: ""
-          - target: "darwin-arm64" # xgo darwin-arm64
+          - target: "darwin-arm64"
             hash: "md5-darwin-arm64"
             flags: ""
             goflags: ""
-          - target: "windows-amd64" # xgo windows-amd64
+          - target: "windows-amd64"
             hash: "md5-windows-amd64"
             flags: ""
             goflags: ""
-          - target: "linux-amd64-musl" # musl linux-amd64
+          - target: "linux-amd64-musl"
             hash: "md5-linux-musl-amd64"
             flags: "-ldflags=-linkmode external -extldflags '-static -fpic'"
             goflags: ""
             musl_static: "true"
-          - target: "linux-arm64-musl" # musl linux-arm64
+          - target: "linux-arm64-musl"
             hash: "md5-linux-musl-arm64"
             flags: "-ldflags=-linkmode external -extldflags '-static -fpic'"
             goflags: ""
             musl_static: "true"
-          - target: "windows-arm64" #win-arm64
+          - target: "windows-arm64"
             hash: "md5-windows-arm64"
             flags: ""
             goflags: ""
             musl_static: "false"
-          - target: "windows7-*" #win7
+          - target: "windows7-*"
             hash: "md5-windows7"
             flags: ""
             goflags: "-tags=sqlite_cgo_compat"
             musl_static: "false"
-          - target: "android-*" #android
+          - target: "android-*"
             hash: "md5-android"
             flags: ""
             goflags: ""
@@ -176,7 +187,7 @@ jobs:
             github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltAt=$built_at
             github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=Xiaraon Studio <noreply@xrgzs.top>
             github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=$git_commit
-            github.com/OpenListTeam/OpenList/v4/internal/conf.Version=$tag
+            github.com/OpenListTeam/OpenList/v4/internal/conf.Version=${{ needs.changelog.outputs.release_tag }}
             github.com/OpenListTeam/OpenList/v4/internal/conf.WebVersion=rolling
         env:
           GOFLAGS: ${{ matrix.goflags }}
@@ -205,14 +216,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # See above
-      - name: Upload assets to beta release
+      - name: Upload assets to release
         uses: softprops/action-gh-release@v2
         with:
           files: build/compress/*
           prerelease: false
           make_latest: true
-          tag_name: beta
+          tag_name: ${{ needs.changelog.outputs.release_tag }}
 
       - name: Clean illegal characters from matrix.target
         id: clean_target_name
@@ -226,7 +236,7 @@ jobs:
       - name: Upload assets to github artifact
         uses: actions/upload-artifact@v4
         with:
-          name: beta builds for ${{ env.cleaned_target }}
+          name: builds for ${{ env.cleaned_target }}
           path: ${{ github.workspace }}/build/compress/*
           compression-level: 0
-          if-no-files-found: error # 'warn' or 'ignore' are also available, defaults to `warn`
+          if-no-files-found: error
