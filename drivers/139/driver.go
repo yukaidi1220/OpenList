@@ -215,7 +215,14 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 			"path":       parentDir.GetPath(),
 		}
 		pathname := "/orchestration/familyCloud-rebuild/cloudCatalog/v1.0/createCloudDoc"
-		_, err = d.post(pathname, data, nil)
+		var resp ModifyCloudDocV2Resp
+		_, err = d.post(pathname, data, &resp)
+		if err != nil {
+			return err
+		}
+		if resp.Result.ResultCode != "0" {
+			return fmt.Errorf("failed to create family folder: %s", resp.Result.ResultDesc)
+		}
 	case MetaGroup:
 		data := base.Json{
 			"catalogName": dirName,
