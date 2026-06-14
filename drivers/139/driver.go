@@ -207,6 +207,12 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 	case MetaFamily:
 		log.Infof("[139] MakeDir family: parentDir.GetID()=%s, parentDir.GetPath()=%s, dirName=%s, RootFolderID=%s, RootPath=%s",
 			parentDir.GetID(), parentDir.GetPath(), dirName, d.RootFolderID, d.RootPath)
+		mkdirPath := parentDir.GetPath()
+		// 当根目录是配置的子目录（非家庭盘真正根目录）时，parentDir（根对象）的 Path 为空，
+		// 需要使用缓存的服务端完整路径 d.RootPath，否则 API 会将文件夹创建到家庭根目录
+		if mkdirPath == "" {
+			mkdirPath = d.RootPath
+		}
 		data := base.Json{
 			"cloudID": d.CloudID,
 			"commonAccountInfo": base.Json{
@@ -214,7 +220,7 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 				"accountType": 1,
 			},
 			"docLibName": dirName,
-			"path":       parentDir.GetPath(),
+			"path":       mkdirPath,
 		}
 		pathname := "/orchestration/familyCloud-rebuild/cloudCatalog/v1.0/createCloudDoc"
 		_, err = d.post(pathname, data, nil)
@@ -317,6 +323,12 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 			contentList = append(contentList, path.Join(srcObj.GetPath(), srcObj.GetID()))
 		}
 
+		destPath := dstDir.GetPath()
+		// 当根目录是配置的子目录（非家庭盘真正根目录）时，dstDir（根对象）的 Path 为空，
+		// 需要使用缓存的服务端完整路径 d.RootPath
+		if destPath == "" {
+			destPath = d.RootPath
+		}
 		body := base.Json{
 			"catalogList": catalogList,
 			"accountInfo": base.Json{
@@ -326,7 +338,7 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 			"contentList":   contentList,
 			"destCatalogID": dstDir.GetID(),
 			"destGroupID":   d.CloudID,
-			"destPath":      dstDir.GetPath(),
+			"destPath":      destPath,
 			"destType":      0,
 			"srcGroupID":    d.CloudID,
 			"srcType":       0,
