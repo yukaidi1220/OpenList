@@ -358,10 +358,12 @@ type ModifyCloudDocV2Req struct {
 }
 
 type ModifyCloudDocV2Resp struct {
-	Result struct {
-		ResultCode string `json:"resultCode"`
-		ResultDesc string `json:"resultDesc"`
-	} `json:"result"`
+	Data struct {
+		Result struct {
+			ResultCode string `json:"resultCode"`
+			ResultDesc string `json:"resultDesc"`
+		} `json:"result"`
+	} `json:"data"`
 }
 
 type CreateBatchOprTaskReq struct {
@@ -382,9 +384,11 @@ type CreateBatchOprTaskReq struct {
 }
 
 type CreateBatchOprTaskResp struct {
-	Result struct {
-		ResultCode string `json:"resultCode"`
-		ResultDesc string `json:"resultDesc"`
-	} `json:"result"`
-	TaskID string `json:"taskID"`
+	Data struct {
+		Result struct {
+			ResultCode string `json:"resultCode"`
+			ResultDesc string `json:"resultDesc"`
+		} `json:"result"`
+		TaskID string `json:"taskID"`
+	} `json:"data"`
 }

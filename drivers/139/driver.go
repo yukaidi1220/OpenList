@@ -215,14 +215,7 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 			"path":       parentDir.GetPath(),
 		}
 		pathname := "/orchestration/familyCloud-rebuild/cloudCatalog/v1.0/createCloudDoc"
-		var resp ModifyCloudDocV2Resp
-		_, err = d.post(pathname, data, &resp)
-		if err != nil {
-			return err
-		}
-		if resp.Result.ResultCode != "0" {
-			return fmt.Errorf("failed to create family folder: %s", resp.Result.ResultDesc)
-		}
+		_, err = d.post(pathname, data, nil)
 	case MetaGroup:
 		data := base.Json{
 			"catalogName": dirName,
@@ -343,9 +336,9 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 		if err != nil {
 			return nil, err
 		}
-		log.Debugf("[139] Move MetaFamily CreateBatchOprTaskResp.Result.ResultCode: %s", resp.Result.ResultCode)
-		if resp.Result.ResultCode != "0" {
-			return nil, fmt.Errorf("failed to move in family cloud: %s", resp.Result.ResultDesc)
+		log.Debugf("[139] Move MetaFamily CreateBatchOprTaskResp.Data.Result.ResultCode: %s", resp.Data.Result.ResultCode)
+		if resp.Data.Result.ResultCode != "0" {
+			return nil, fmt.Errorf("failed to move in family cloud: %s", resp.Data.Result.ResultDesc)
 		}
 		return srcObj, nil
 	default:
@@ -439,8 +432,8 @@ func (d *Yun139) Rename(ctx context.Context, srcObj model.Obj, newName string) e
 			if err != nil {
 				return err
 			}
-			if resp.Result.ResultCode != "0" {
-				return fmt.Errorf("failed to rename family folder: %s", resp.Result.ResultDesc)
+			if resp.Data.Result.ResultCode != "0" {
+				return fmt.Errorf("failed to rename family folder: %s", resp.Data.Result.ResultDesc)
 			}
 			return nil
 		} else {

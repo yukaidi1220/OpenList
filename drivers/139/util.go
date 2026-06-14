@@ -179,8 +179,8 @@ func (d *Yun139) request(url string, method string, callback base.ReqCallback, r
 				return nil, err // Return unmarshal error
 			}
 			if createBatchOprTaskResp, ok := resp.(*CreateBatchOprTaskResp); ok {
-				log.Debugf("[139] CreateBatchOprTaskResp.Result.ResultCode: %s", createBatchOprTaskResp.Result.ResultCode)
-				if createBatchOprTaskResp.Result.ResultCode == "0" {
+				log.Debugf("[139] CreateBatchOprTaskResp.Data.Result.ResultCode: %s", createBatchOprTaskResp.Data.Result.ResultCode)
+				if createBatchOprTaskResp.Data.Result.ResultCode == "0" {
 					goto SUCCESS_PROCESS
 				}
 			}
