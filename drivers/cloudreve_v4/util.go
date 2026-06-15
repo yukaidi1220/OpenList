@@ -555,9 +555,6 @@ func (d *CloudreveV4) upOneDrive(ctx context.Context, file model.FileStreamer, u
 
 func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileUploadResp, up driver.UpdateProgress, s3Type string) error {
 	DEFAULT := int64(u.ChunkSize)
-	if DEFAULT <= 0 {
-		return fmt.Errorf("invalid chunk size: %d", u.ChunkSize)
-	}
 	ss, err := stream.NewStreamSectionReader(file, int(DEFAULT), &up)
 	if err != nil {
 		return err
@@ -565,11 +562,7 @@ func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileU
 
 	var finish int64 = 0
 	var chunk int = 0
-	partCount := int((file.GetSize() + DEFAULT - 1) / DEFAULT)
-	if len(u.UploadUrls) < partCount {
-		return fmt.Errorf("upload urls not enough: got %d, need %d", len(u.UploadUrls), partCount)
-	}
-	etags := make([]string, partCount)
+	var etags []string
 	for finish < file.GetSize() {
 		if utils.IsCanceled(ctx) {
 			return ctx.Err()
@@ -584,7 +577,6 @@ func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileU
 		err = retry.Do(
 			func() error {
 				rd.Seek(0, io.SeekStart)
-				partNumber := chunk + 1
 				req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.UploadUrls[chunk],
 					driver.NewLimitedUploadStream(ctx, rd))
 				if err != nil {
@@ -607,8 +599,7 @@ func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileU
 				case etag == "":
 					return errors.New("failed to get ETag from header")
 				default:
-					etags[chunk] = etag
-					utils.Log.Debugf("[CloudreveV4-S3] uploaded part %d/%d, etag=%s", partNumber, partCount, etag)
+					etags = append(etags, etag)
 					return nil
 				}
 			},
@@ -630,9 +621,6 @@ func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileU
 	bodyBuilder := &strings.Builder{}
 	bodyBuilder.WriteString("<CompleteMultipartUpload>")
 	for i, etag := range etags {
-		if etag == "" {
-			return fmt.Errorf("missing ETag for part %d", i+1)
-		}
 		bodyBuilder.WriteString(fmt.Sprintf(
 			`<Part><PartNumber>%d</PartNumber><ETag>%s</ETag></Part>`,
 			i+1, // PartNumber 从 1 开始
