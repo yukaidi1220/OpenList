@@ -78,20 +78,12 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: ["latest", "ffmpeg", "aria2", "aio"]
+        image: ["latest", "aio"]
         include:
           - image: "latest"
             base_image_tag: "base"
             build_arg: ""
             tag_favor: ""
-          - image: "ffmpeg"
-            base_image_tag: "ffmpeg"
-            build_arg: INSTALL_FFMPEG=true
-            tag_favor: "suffix=-ffmpeg,onlatest=true"
-          - image: "aria2"
-            base_image_tag: "aria2"
-            build_arg: INSTALL_ARIA2=true
-            tag_favor: "suffix=-aria2,onlatest=true"
           - image: "aio"
             base_image_tag: "aio"
             build_arg: |
