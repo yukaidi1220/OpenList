@@ -91,7 +91,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if status != 0 {
 		w.WriteHeader(status)
 		if status != http.StatusNoContent {
-			w.Write([]byte(StatusText(status)))
+			body := StatusText(status)
+			if err != nil {
+				body += ": " + err.Error()
+			}
+			w.Write([]byte(body))
 		}
 	} else if useBufferedWriter {
 		brw.WriteToResponse(w)

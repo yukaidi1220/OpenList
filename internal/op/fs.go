@@ -611,7 +611,17 @@ func Remove(ctx context.Context, storage driver.Driver, path string) error {
 			log.Debugf("%s have been removed", path)
 			return nil
 		}
-		return errors.WithMessage(err, "failed to get object")
+		// Get 可能是瞬态故障(Cloudreve API超时等)，重试一次
+		log.Warnf("failed to get object [%s], retrying: %v", path, err)
+		time.Sleep(1 * time.Second)
+		rawObj, err = Get(ctx, storage, path, true)
+		if err != nil {
+			if errs.IsObjectNotFound(err) {
+				log.Debugf("%s have been removed", path)
+				return nil
+			}
+			return errors.WithMessage(err, "failed to get object")
+		}
 	}
 	if model.ObjHasMask(rawObj, model.NoRemove) {
 		return errors.WithStack(errs.PermissionDenied)
