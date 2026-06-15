@@ -555,6 +555,11 @@ func (d *CloudreveV4) upOneDrive(ctx context.Context, file model.FileStreamer, u
 
 func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileUploadResp, up driver.UpdateProgress, s3Type string) error {
 	DEFAULT := int64(u.ChunkSize)
+	ss, err := stream.NewStreamSectionReader(file, int(DEFAULT), &up)
+	if err != nil {
+		return err
+	}
+
 	var finish int64 = 0
 	var chunk int = 0
 	var etags []string
@@ -565,21 +570,15 @@ func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileU
 		left := file.GetSize() - finish
 		byteSize := min(left, DEFAULT)
 		utils.Log.Debugf("[CloudreveV4-S3] upload range: %d-%d/%d", finish, finish+byteSize-1, file.GetSize())
-
-		// 只缓存当前分片，读完一块、传完一块、释放一块
-		buf := make([]byte, byteSize)
-		n, err := io.ReadFull(file, buf)
-		if err != nil || int64(n) != byteSize {
-			if err == nil {
-				err = fmt.Errorf("short read: expect %d, got %d", byteSize, n)
-			}
+		rd, err := ss.GetSectionReader(finish, byteSize)
+		if err != nil {
 			return err
 		}
-
 		err = retry.Do(
 			func() error {
+				rd.Seek(0, io.SeekStart)
 				req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.UploadUrls[chunk],
-					driver.NewLimitedUploadStream(ctx, bytes.NewReader(buf)))
+					driver.NewLimitedUploadStream(ctx, rd))
 				if err != nil {
 					return err
 				}
@@ -609,6 +608,7 @@ func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileU
 			retry.DelayType(retry.BackOffDelay),
 			retry.Delay(time.Second),
 		)
+		ss.FreeSectionReader(rd)
 		if err != nil {
 			return err
 		}
