@@ -297,6 +297,7 @@ func (b *s3Backend) PutObject(
 		return result, errs.IgnoredSystemFile
 	}
 	stream := &stream.FileStream{
+		Ctx:      ctx,
 		Obj:      &obj,
 		Reader:   input,
 		Mimetype: meta["Content-Type"],

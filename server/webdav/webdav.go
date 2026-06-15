@@ -397,6 +397,7 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 		return http.StatusForbidden, errs.PermissionDenied
 	}
 	fsStream := &stream.FileStream{
+		Ctx:      ctx,
 		Obj:      &obj,
 		Reader:   r.Body,
 		Mimetype: r.Header.Get("Content-Type"),
@@ -411,7 +412,7 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
-	fi, err := fs.Get(ctx, reqPath, &fs.GetArgs{})
+	fi, err := waitPutVisible(ctx, reqPath)
 	if err != nil {
 		fi = &obj
 	}
@@ -421,6 +422,32 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 	}
 	w.Header().Set("Etag", etag)
 	return http.StatusCreated, nil
+}
+
+func waitPutVisible(ctx context.Context, reqPath string) (model.Obj, error) {
+	fi, err := fs.Get(ctx, reqPath, &fs.GetArgs{})
+	if err == nil || !errs.IsObjectNotFound(err) {
+		return fi, err
+	}
+
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			fi, err = fs.Get(ctx, reqPath, &fs.GetArgs{})
+			if err == nil || !errs.IsObjectNotFound(err) {
+				return fi, err
+			}
+		case <-timer.C:
+			return nil, err
+		}
+	}
 }
 
 func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status int, err error) {

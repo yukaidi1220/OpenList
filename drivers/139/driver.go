@@ -892,13 +892,16 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 			if err != nil {
 				return err
 			}
+			bodyBytes, readErr := io.ReadAll(res.Body)
+			closeErr := res.Body.Close()
 			if res.StatusCode != http.StatusOK {
-				res.Body.Close()
-				return fmt.Errorf("unexpected status code: %d", res.StatusCode)
+				return fmt.Errorf("unexpected status code: %d, body: %s", res.StatusCode, string(bodyBytes))
 			}
-			bodyBytes, err := io.ReadAll(res.Body)
-			if err != nil {
-				return fmt.Errorf("error reading response body: %v", err)
+			if readErr != nil {
+				return fmt.Errorf("error reading response body: %v", readErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("error closing response body: %v", closeErr)
 			}
 			var result InterLayerUploadResult
 			err = xml.Unmarshal(bodyBytes, &result)
