@@ -315,7 +315,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 		if errs.IsObjectNotFound(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	parentPath := path.Dir(reqPath)
 	parentMeta, err := op.GetNearestMeta(parentPath)
@@ -326,7 +326,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 		return http.StatusForbidden, errs.PermissionDenied
 	}
 	if err := fs.Remove(ctx, reqPath); err != nil {
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	//fs.ClearCache(path.Dir(reqPath))
 	return http.StatusNoContent, nil
@@ -402,10 +402,8 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 	if errs.IsNotFoundError(err) {
 		return http.StatusNotFound, err
 	}
-
-	// TODO(rost): Returning 405 Method Not Allowed might not be appropriate.
 	if err != nil {
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	fi, err := fs.Get(ctx, reqPath, &fs.GetArgs{})
 	if err != nil {
@@ -453,7 +451,7 @@ func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status in
 		if errs.IsObjectNotFound(err) {
 			return http.StatusConflict, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	parentMeta, err := op.GetNearestMeta(parentPath)
 	if err != nil && !errors.Is(errors.Cause(err), errs.MetaNotFound) {
@@ -469,7 +467,7 @@ func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status in
 		if os.IsNotExist(err) {
 			return http.StatusConflict, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	return http.StatusCreated, nil
 }
@@ -820,7 +818,7 @@ func (h *Handler) handleProppatch(w http.ResponseWriter, r *http.Request) (statu
 		if errs.IsObjectNotFound(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	patches, status, err := readProppatch(r.Body)
 	if err != nil {
