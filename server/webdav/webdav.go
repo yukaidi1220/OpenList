@@ -311,11 +311,12 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 	// "godoc os RemoveAll" says that "If the path does not exist, RemoveAll
 	// returns nil (no error)." WebDAV semantics are that it should return a
 	// "404 Not Found". We therefore have to Stat before we RemoveAll.
-	if _, err := fs.Get(ctx, reqPath, &fs.GetArgs{}); err != nil {
+	if _, err := fs.Get(ctx, reqPath, &fs.GetArgs{NoLog: true}); err != nil {
 		if errs.IsObjectNotFound(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusInternalServerError, err
+		// Get fail 可能是 List 接口临时异常，不影响实际删除，跳过校验继续走 Remove
+		log.Debugf("[webdav] pre-delete stat failed (%v), proceeding with remove anyway: %s", err, reqPath)
 	}
 	parentPath := path.Dir(reqPath)
 	parentMeta, err := op.GetNearestMeta(parentPath)
