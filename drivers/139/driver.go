@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"time"
@@ -859,6 +860,25 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 			return fmt.Errorf("get file upload url failed with result code: %s, message: %s", resp.Data.Result.ResultCode, resp.Data.Result.ResultDesc)
 		}
 
+		// 替换家庭盘上传域名 adapter.yun.139.com → CustomFamilyUploadHost
+		uploadURL := resp.Data.UploadResult.RedirectionURL
+		if d.CustomFamilyUploadHost != "" {
+			u, parseErr := url.Parse(uploadURL)
+			if parseErr != nil {
+				return fmt.Errorf("parse redirectionUrl failed: %w", parseErr)
+			}
+			if u.Host == "adapter.yun.139.com" {
+				customU, parseErr := url.Parse(d.CustomFamilyUploadHost)
+				if parseErr != nil {
+					return fmt.Errorf("parse custom family upload host failed: %w", parseErr)
+				}
+				u.Scheme = customU.Scheme
+				u.Host = customU.Host
+				uploadURL = u.String()
+				log.Infof("[139] family upload host replaced: adapter.yun.139.com -> %s", customU.Host)
+			}
+		}
+
 		size := stream.GetSize()
 		partSize := d.getPartSize(size)
 
@@ -896,7 +916,7 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 						return getErr
 					}
 					rd.Seek(0, io.SeekStart)
-					req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, resp.Data.UploadResult.RedirectionURL,
+					req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL,
 						io.TeeReader(rd, p))
 					if reqErr != nil {
 						return reqErr
