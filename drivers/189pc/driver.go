@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -186,6 +187,13 @@ func (y *Cloud189PC) Link(ctx context.Context, file model.Obj, args model.LinkAr
 
 	// 重定向获取真实链接
 	downloadUrl.URL = strings.Replace(strings.ReplaceAll(downloadUrl.URL, "&amp;", "&"), "http://", "https://", 1)
+	// 去掉 x-amz-limitrate 参数
+	if parsedURL, err := url.Parse(downloadUrl.URL); err == nil {
+		query := parsedURL.Query()
+		query.Del("x-amz-limitrate")
+		parsedURL.RawQuery = query.Encode()
+		downloadUrl.URL = parsedURL.String()
+	}
 	res, err := base.NoRedirectClient.R().SetContext(ctx).SetDoNotParseResponse(true).Get(downloadUrl.URL)
 	if err != nil {
 		return nil, err
