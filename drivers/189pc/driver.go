@@ -17,6 +17,7 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 type Cloud189PC struct {
@@ -167,6 +168,8 @@ func (y *Cloud189PC) Link(ctx context.Context, file model.Obj, args model.LinkAr
 	}
 	fullUrl += "/getFileDownloadUrl.action"
 
+	log.Debugf("[189pc] Link: fileId=%s, isFamily=%v, API=%s", file.GetID(), isFamily, fullUrl)
+
 	_, err := y.get(fullUrl, func(r *resty.Request) {
 		r.SetContext(ctx)
 		r.SetQueryParam("fileId", file.GetID())
@@ -182,25 +185,41 @@ func (y *Cloud189PC) Link(ctx context.Context, file model.Obj, args model.LinkAr
 		}
 	}, &downloadUrl, isFamily)
 	if err != nil {
+		log.Debugf("[189pc] Link: 获取下载链接失败, err=%v", err)
 		return nil, err
 	}
 
+	log.Debugf("[189pc] Link: API返回 fileDownloadUrl=%s", downloadUrl.URL)
+
 	// 重定向获取真实链接
 	downloadUrl.URL = strings.Replace(strings.ReplaceAll(downloadUrl.URL, "&amp;", "&"), "http://", "https://", 1)
-	// 去掉 x-amz-limitrate 参数
+	log.Debugf("[189pc] Link: 替换后 URL=%s", downloadUrl.URL)
+
+	// 如果存在 x-amz-limitrate 参数，将其值改为 999999999999
 	if parsedURL, err := url.Parse(downloadUrl.URL); err == nil {
 		query := parsedURL.Query()
-		query.Del("x-amz-limitrate")
-		parsedURL.RawQuery = query.Encode()
-		downloadUrl.URL = parsedURL.String()
+		if query.Has("x-amz-limitrate") {
+			oldVal := query.Get("x-amz-limitrate")
+			query.Set("x-amz-limitrate", "999999999999")
+			parsedURL.RawQuery = query.Encode()
+			downloadUrl.URL = parsedURL.String()
+			log.Debugf("[189pc] Link: x-amz-limitrate 原值=%s, 已改为 999999999999, 新URL=%s", oldVal, downloadUrl.URL)
+		}
+	} else {
+		log.Debugf("[189pc] Link: URL解析失败, err=%v", err)
 	}
+
+	log.Debugf("[189pc] Link: 发起请求 URL=%s", downloadUrl.URL)
 	res, err := base.NoRedirectClient.R().SetContext(ctx).SetDoNotParseResponse(true).Get(downloadUrl.URL)
 	if err != nil {
+		log.Debugf("[189pc] Link: 请求失败, err=%v", err)
 		return nil, err
 	}
 	defer res.RawBody().Close()
+	log.Debugf("[189pc] Link: 响应状态码=%d", res.StatusCode())
 	if res.StatusCode() == 302 {
 		downloadUrl.URL = res.Header().Get("location")
+		log.Debugf("[189pc] Link: 302重定向, location=%s", downloadUrl.URL)
 	}
 
 	like := &model.Link{
@@ -209,17 +228,7 @@ func (y *Cloud189PC) Link(ctx context.Context, file model.Obj, args model.LinkAr
 			"User-Agent": []string{base.UserAgent},
 		},
 	}
-	/*
-		// 获取链接有效时常
-		strs := regexp.MustCompile(`(?i)expire[^=]*=([0-9]*)`).FindStringSubmatch(downloadUrl.URL)
-		if len(strs) == 2 {
-			timestamp, err := strconv.ParseInt(strs[1], 10, 64)
-			if err == nil {
-				expired := time.Duration(timestamp-time.Now().Unix()) * time.Second
-				like.Expiration = &expired
-			}
-		}
-	*/
+	log.Debugf("[189pc] Link: 最终下载链接=%s", downloadUrl.URL)
 	return like, nil
 }
 
