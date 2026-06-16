@@ -467,25 +467,25 @@ func (d *CloudreveV4) upRemote(ctx context.Context, file model.FileStreamer, u F
 				if err != nil {
 					return err
 				}
-				if up.Code != 0 {
-					return errors.New(up.Msg)
-				}
-				return nil
-			},
-			retry.Context(ctx),
-			retry.Attempts(3),
-			retry.DelayType(retry.BackOffDelay),
-			retry.Delay(time.Second),
-		)
-		ss.FreeSectionReader(rd)
-		if err != nil {
-			return err
-		}
-		finish += byteSize
-		up(float64(finish) * 100 / float64(file.GetSize()))
-		chunk++
+			if up.Code != 0 {
+				return errors.New(up.Msg)
+			}
+			return nil
+		},
+		retry.Context(ctx),
+		retry.Attempts(10),
+		retry.DelayType(retry.BackOffDelay),
+		retry.Delay(time.Second),
+	)
+	ss.FreeSectionReader(rd)
+	if err != nil {
+		return err
 	}
-	return nil
+	finish += byteSize
+	up(float64(finish) * 100 / float64(file.GetSize()))
+	chunk++
+}
+return nil
 }
 
 func (d *CloudreveV4) upOneDrive(ctx context.Context, file model.FileStreamer, u FileUploadResp, up driver.UpdateProgress) error {
@@ -530,16 +530,16 @@ func (d *CloudreveV4) upOneDrive(ctx context.Context, file model.FileStreamer, u
 					return fmt.Errorf("server error: %d", res.StatusCode)
 				case res.StatusCode != 201 && res.StatusCode != 202 && res.StatusCode != 200:
 					data, _ := io.ReadAll(res.Body)
-					return errors.New(string(data))
-				default:
-					return nil
-				}
-			},
-			retry.Context(ctx),
-			retry.Attempts(3),
-			retry.DelayType(retry.BackOffDelay),
-			retry.Delay(time.Second),
-		)
+			return errors.New(string(data))
+			default:
+				return nil
+			}
+		},
+		retry.Context(ctx),
+		retry.Attempts(10),
+		retry.DelayType(retry.BackOffDelay),
+		retry.Delay(time.Second),
+	)
 		ss.FreeSectionReader(rd)
 		if err != nil {
 			return err
@@ -604,7 +604,7 @@ func (d *CloudreveV4) upS3(ctx context.Context, file model.FileStreamer, u FileU
 				}
 			},
 			retry.Context(ctx),
-			retry.Attempts(3),
+			retry.Attempts(10),
 			retry.DelayType(retry.BackOffDelay),
 			retry.Delay(time.Second),
 		)

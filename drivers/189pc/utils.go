@@ -726,7 +726,7 @@ func (y *Cloud189PC) StreamUpload(ctx context.Context, dstDir model.Obj, file mo
 	}
 
 	threadG, upCtx := errgroup.NewOrderedGroupWithContext(ctx, y.uploadThread,
-		retry.Attempts(3),
+		retry.Attempts(10),
 		retry.Delay(time.Second),
 		retry.DelayType(retry.BackOffDelay))
 
@@ -1037,7 +1037,7 @@ func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file mode
 			return nil, fmt.Errorf("fastupload can not do rapid upload")
 		}
 		threadG, upCtx := errgroup.NewGroupWithContext(ctx, y.uploadThread,
-			retry.Attempts(3),
+			retry.Attempts(10),
 			retry.Delay(time.Second),
 			retry.DelayType(retry.BackOffDelay))
 		for i, uploadPart := range uploadProgress.UploadParts {
