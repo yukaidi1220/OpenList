@@ -15,7 +15,7 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 	"github.com/OpenListTeam/OpenList/v4/internal/op"
-	"github.com/OpenListTeam/OpenList/v4/internal/stream"
+	streamPkg "github.com/OpenListTeam/OpenList/v4/internal/stream"
 	"github.com/OpenListTeam/OpenList/v4/pkg/cron"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils/random"
@@ -621,7 +621,7 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 		var err error
 		fullHash := stream.GetHash().GetHash(utils.SHA256)
 		if len(fullHash) != utils.SHA256.Width {
-			_, fullHash, err = stream.CacheFullAndHash(stream, &up, utils.SHA256)
+			_, fullHash, err = streamPkg.CacheFullAndHash(stream, &up, utils.SHA256)
 			if err != nil {
 				return err
 			}
@@ -866,7 +866,7 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 		rateLimited := driver.NewLimitedUploadStream(ctx, stream)
 
 		// StreamSectionReader for per-chunk buffering and retry
-		ss, err := stream.NewStreamSectionReader(&stream.FileStream{
+		ss, err := streamPkg.NewStreamSectionReader(&streamPkg.FileStream{
 			Ctx:    ctx,
 			Reader: rateLimited,
 			Obj:    &model.Object{Size: size},
