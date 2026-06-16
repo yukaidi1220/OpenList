@@ -608,11 +608,12 @@ func (d *Yun139) getPartSize(size int64) int64 {
 	if d.CustomUploadPartSize != 0 {
 		return d.CustomUploadPartSize
 	}
-	// 网盘对于分片数量存在上限
-	if size/utils.GB > 30 {
-		return 512 * utils.MB
-	}
-	return 100 * utils.MB
+	// // 网盘对于分片数量存在上限
+	// if size/utils.GB > 30 {
+	// 	return 512 * utils.MB
+	// }
+	// return 100 * utils.MB
+	return 10 * utils.MB
 }
 
 func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up driver.UpdateProgress) error {
