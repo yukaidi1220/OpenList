@@ -146,6 +146,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FRONTEND_REPO: ${{ vars.FRONTEND_REPO }}
 
+      - name: Tidy go modules
+        run: go mod tidy
+
       - name: Build
         uses: OpenListTeam/cgo-actions@v1.2.5
         with:
