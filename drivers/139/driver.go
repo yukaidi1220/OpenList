@@ -29,6 +29,7 @@ type Yun139 struct {
 	Addition
 	cron              *cron.Cron
 	Account           string
+	RootPath          string
 	ref               *Yun139
 	PersonalCloudHost string
 	FamilyCloudHost   string
