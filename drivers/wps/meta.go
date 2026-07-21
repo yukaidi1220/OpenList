@@ -17,7 +17,7 @@ var config = driver.Config{
 	Name:        "WPS",
 	LocalSort:   true,
 	DefaultRoot: "/",
-	Alert:       "",
+	CheckStatus: true,
 }
 
 func init() {

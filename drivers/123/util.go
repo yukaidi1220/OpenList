@@ -28,9 +28,9 @@ import (
 // do others that not defined in Driver interface
 
 const (
-	Api              = "https://www.123pan.com/api"
-	AApi             = "https://www.123pan.com/a/api"
-	BApi             = "https://www.123pan.com/b/api"
+	Api              = "https://yun.123pan.com/api"
+	AApi             = "https://yun.123pan.com/a/api"
+	BApi             = "https://yun.123pan.com/b/api"
 	LoginApi         = "https://login.123pan.com/api"
 	MainApi          = Api
 	SignIn           = LoginApi + "/user/sign_in"
@@ -61,14 +61,14 @@ const (
 var ErrOfflineTaskNotFound = errors.New("offline task not found")
 
 const (
-	AndroidUserAgentPrefix = "123pan/v3.1.7" // 123pan/v2.4.8(Android_14;XiaoMi)
+	AndroidUserAgentPrefix = "123pan/v3.2.11" // 123pan/v2.4.8(Android_14;XiaoMi)
 	AndroidPlatformParam   = "android"
 	AndroidAppVer          = "70"
-	AndroidXAppVer         = "3.1.7"
+	AndroidXAppVer         = "3.2.11"
 	AndroidXChannel        = "1001"
-	TVUserAgentPrefix      = "123pan_android_tv/1.0.0" // 123pan_android_tv/1.0.0(14;samsung SM-X800)
+	TVUserAgentPrefix      = "123pan_android_tv/1.1.5" // 123pan_android_tv/1.0.0(14;samsung SM-X800)
 	TVPlatformParam        = "android_tv"
-	TVAndroidAppVer        = "100"
+	TVAndroidAppVer        = "115"
 )
 
 type Params struct {
@@ -200,8 +200,6 @@ func (d *Pan123) login() error {
 	req := base.RestyClient.R()
 
 	req.SetHeaders(map[string]string{
-		/*			"origin":      "https://www.123pan.com",
-					"referer":     "https://www.123pan.com/",*/
 		"user-agent":  d.params.UserAgent,
 		"platform":    d.params.Platform,
 		"app-version": d.params.AppVersion,
@@ -223,8 +221,8 @@ func (d *Pan123) login() error {
 	res, err := req.SetBody(body).Post(SignIn)
 	//res, err := base.RestyClient.R().
 	//	SetHeaders(map[string]string{
-	//		/*			"origin":      "https://www.123pan.com",
-	//					"referer":     "https://www.123pan.com/",*/
+	//		/*			"origin":      "https://yun.123pan.com",
+	//					"referer":     "https://yun.123pan.com/",*/
 	//		"user-agent":  d.params.UserAgent,
 	//		"platform":    d.params.Platform,
 	//		"app-version": d.params.AppVersion,
@@ -327,8 +325,8 @@ func (d *Pan123) Request(url string, method string, callback base.ReqCallback, r
 do:
 	req := base.RestyClient.R()
 	req.SetHeaders(map[string]string{
-		/*		"origin":        "https://www.123pan.com",
-				"referer":       "https://www.123pan.com/",*/
+		// "origin":        "https://yun.123pan.com",
+		// "referer":       "https://yun.123pan.com/",
 		"authorization": "Bearer " + d.AccessToken,
 		"user-agent":    d.params.UserAgent,
 		"platform":      d.params.Platform,

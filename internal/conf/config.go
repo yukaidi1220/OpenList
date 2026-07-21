@@ -106,6 +106,10 @@ type SFTP struct {
 	Listen string `json:"listen" env:"LISTEN"`
 }
 
+type MCP struct {
+	Enable bool `json:"enable" env:"ENABLE"`
+}
+
 type Config struct {
 	Force                 bool        `json:"force" env:"FORCE"`
 	SiteURL               string      `json:"site_url" env:"SITE_URL"`
@@ -125,12 +129,14 @@ type Config struct {
 	MaxBlockLimit         int         `json:"max_block_limit" env:"MAX_BLOCK_LIMIT"`
 	MaxConnections        int         `json:"max_connections" env:"MAX_CONNECTIONS"`
 	MaxConcurrency        int         `json:"max_concurrency" env:"MAX_CONCURRENCY"`
+	PrefetchChunks        int         `json:"prefetch_chunks" env:"PREFETCH_CHUNKS"`
 	TlsInsecureSkipVerify bool        `json:"tls_insecure_skip_verify" env:"TLS_INSECURE_SKIP_VERIFY"`
 	Tasks                 TasksConfig `json:"tasks" envPrefix:"TASKS_"`
 	Cors                  Cors        `json:"cors" envPrefix:"CORS_"`
 	S3                    S3          `json:"s3" envPrefix:"S3_"`
 	FTP                   FTP         `json:"ftp" envPrefix:"FTP_"`
 	SFTP                  SFTP        `json:"sftp" envPrefix:"SFTP_"`
+	MCP                   MCP         `json:"mcp" envPrefix:"MCP_"`
 	LastLaunchedVersion   string      `json:"last_launched_version"`
 	ProxyAddress          string      `json:"proxy_address" env:"PROXY_ADDRESS"`
 }
@@ -182,6 +188,7 @@ func DefaultConfig(dataDir string) *Config {
 		AutoMemoryLimit:       4,
 		MaxConnections:        0,
 		MaxConcurrency:        64,
+		PrefetchChunks:        0,
 		TlsInsecureSkipVerify: false,
 		Tasks: TasksConfig{
 			Download: TaskConfig{
@@ -243,6 +250,9 @@ func DefaultConfig(dataDir string) *Config {
 		SFTP: SFTP{
 			Enable: false,
 			Listen: ":5222",
+		},
+		MCP: MCP{
+			Enable: false,
 		},
 		LastLaunchedVersion: "",
 		ProxyAddress:        "",

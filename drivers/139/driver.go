@@ -31,7 +31,8 @@ type Yun139 struct {
 	Account           string
 	ref               *Yun139
 	PersonalCloudHost string
-	RootPath          string
+	FamilyCloudHost   string
+	GroupCloudHost    string
 }
 
 func (d *Yun139) Config() driver.Config {
@@ -75,13 +76,23 @@ func (d *Yun139) Init(ctx context.Context) error {
 			return err
 		}
 		for _, policyItem := range resp.Data.RoutePolicyList {
-			if policyItem.ModName == "personal" {
+			switch policyItem.ModName {
+			case "personal":
 				d.PersonalCloudHost = policyItem.HttpsUrl
-				break
+			case "group":
+				d.GroupCloudHost = policyItem.HttpsUrl
+			case "family":
+				d.FamilyCloudHost = policyItem.HttpsUrl
 			}
 		}
 		if len(d.PersonalCloudHost) == 0 {
 			return fmt.Errorf("PersonalCloudHost is empty")
+		}
+		if len(d.GroupCloudHost) == 0 {
+			return fmt.Errorf("GroupCloudHost is empty")
+		}
+		if len(d.FamilyCloudHost) == 0 {
+			return fmt.Errorf("FamilyCloudHost is empty")
 		}
 
 		d.cron = cron.NewCron(time.Hour * 12)
@@ -235,7 +246,7 @@ func (d *Yun139) MakeDir(ctx context.Context, parentDir model.Obj, dirName strin
 			},
 			"groupID":      d.CloudID,
 			"parentFileId": parentDir.GetID(),
-			"path":         path.Join(parentDir.GetPath(), parentDir.GetID()),
+			"path":         d.dirPath(parentDir),
 		}
 		pathname := "/orchestration/group-rebuild/catalog/v1.0/createGroupCatalog"
 		_, err = d.post(pathname, data, nil)
@@ -322,7 +333,7 @@ func (d *Yun139) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj,
 		if srcObj.IsDir() {
 			catalogList = append(catalogList, srcObj.GetPath())
 		} else {
-			contentList = append(contentList, path.Join(srcObj.GetPath(), srcObj.GetID()))
+			contentList = append(contentList, d.dirPath(srcObj))
 		}
 
 		destPath := dstDir.GetPath()
@@ -618,8 +629,22 @@ func (d *Yun139) getPartSize(size int64) int64 {
 }
 
 func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up driver.UpdateProgress) error {
-	switch d.Addition.Type {
-	case MetaPersonalNew:
+	// PersonalNew 以及 Group/Family 在非旧流模式时走新上传路径
+	if d.Addition.Type == MetaPersonalNew ||
+		((d.isGroup() || d.isFamily()) && !d.UseOldStreamUpload) {
+		var createPath, getUploadUrlPath, completePath string
+		if d.isGroup() || d.isFamily() {
+			// 家庭盘和小组盘共用同一套新上传 API
+			createPath = "/dynamic/file/create"
+			getUploadUrlPath = "/dynamic/file/getUploadUrl"
+			completePath = "/dynamic/file/complete"
+		} else {
+			// MetaPersonalNew
+			createPath = "/file/create"
+			getUploadUrlPath = "/file/getUploadUrl"
+			completePath = "/file/complete"
+		}
+
 		var err error
 		fullHash := stream.GetHash().GetHash(utils.SHA256)
 		if len(fullHash) != utils.SHA256.Width {
@@ -674,9 +699,22 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 			"type":                 "file",
 			"fileRenameMode":       "auto_rename",
 		}
-		pathname := "/file/create"
+		// 家庭盘和小组盘需要额外的参数
+		if d.isGroup() || d.isFamily() {
+			if d.CloudID == "" {
+				return fmt.Errorf("cloud_id is required for group/family upload")
+			}
+			data["groupId"] = d.CloudID
+			if d.isGroup() {
+				data["groupType"] = 2
+			} else if d.isFamily() {
+				data["groupType"] = 1
+			}
+			data["catalogType"] = 3
+			data["seqNo"] = random.String(32)
+		}
 		var resp PersonalUploadResp
-		_, err = d.personalPost(pathname, data, &resp)
+		_, err = d.newPost(createPath, data, &resp)
 		if err != nil {
 			return err
 		}
@@ -693,10 +731,19 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 		if resp.Data.PartInfos != nil {
 			// Progress
 			p := driver.NewProgress(size, up)
+
 			rateLimited := driver.NewLimitedUploadStream(ctx, stream)
+			ss, err := streamPkg.NewStreamSectionReader(&streamPkg.FileStream{
+				Ctx:    ctx,
+				Reader: rateLimited,
+				Obj:    &model.Object{Size: size},
+			}, int(partSize), &up)
+			if err != nil {
+				return err
+			}
 
 			// 先上传前100个分片
-			err = d.uploadPersonalParts(ctx, partInfos, resp.Data.PartInfos, rateLimited, p)
+			err = d.uploadPersonalParts(ctx, partInfos, resp.Data.PartInfos, ss, p)
 			if err != nil {
 				return err
 			}
@@ -714,13 +761,12 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 						"accountType": 1,
 					},
 				}
-				pathname := "/file/getUploadUrl"
 				var moreresp PersonalUploadUrlResp
-				_, err = d.personalPost(pathname, moredata, &moreresp)
+				_, err = d.newPost(getUploadUrlPath, moredata, &moreresp)
 				if err != nil {
 					return err
 				}
-				err = d.uploadPersonalParts(ctx, partInfos, moreresp.Data.PartInfos, rateLimited, p)
+				err = d.uploadPersonalParts(ctx, batchPartInfos, moreresp.Data.PartInfos, ss, p)
 				if err != nil {
 					return err
 				}
@@ -733,7 +779,11 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 				"fileId":               resp.Data.FileId,
 				"uploadId":             resp.Data.UploadId,
 			}
-			_, err = d.personalPost("/file/complete", data, nil)
+			// 家庭盘和小组盘需要额外的参数
+			if d.isGroup() || d.isFamily() {
+				data["groupId"] = d.CloudID
+			}
+			_, err = d.newPost(completePath, data, nil)
 			if err != nil {
 				return err
 			}
@@ -778,11 +828,11 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 			}
 		}
 		return nil
-	case MetaPersonal:
-		fallthrough
-	case MetaGroup:
-		fallthrough
-	case MetaFamily:
+	}
+
+	// 旧上传路径
+	switch d.Addition.Type {
+	case MetaPersonal, MetaGroup, MetaFamily:
 		// 处理冲突
 		// 获取文件列表
 		files, err := d.List(ctx, dstDir, model.ListArgs{})
@@ -829,7 +879,7 @@ func (d *Yun139) Put(ctx context.Context, dstDir model.Obj, stream model.FileStr
 			},
 		}
 		pathname := "/orchestration/personalCloud/uploadAndDownload/v1.0/pcUploadFileRequest"
-		if d.isFamily() || d.Addition.Type == MetaGroup {
+		if d.isFamily() || d.isGroup() {
 			uploadPath := dstDir.GetPath()
 			// if dstDir is root folder
 			if dstDir.GetID() == d.RootFolderID {
@@ -995,38 +1045,14 @@ func (d *Yun139) GetDetails(ctx context.Context) (*model.StorageDetails, error) 
 	if d.UserDomainID == "" {
 		return nil, errs.NotImplement
 	}
-	var total, used int64
-	if d.isFamily() {
-		diskInfo, err := d.getFamilyDiskInfo(ctx)
-		if err != nil {
-			return nil, err
-		}
-		totalMb, err := strconv.ParseInt(diskInfo.Data.DiskSize, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed convert disk size into integer: %+v", err)
-		}
-		usedMb, err := strconv.ParseInt(diskInfo.Data.UsedSize, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed convert used size into integer: %+v", err)
-		}
-		total = totalMb * 1024 * 1024
-		used = usedMb * 1024 * 1024
-	} else {
-		diskInfo, err := d.getPersonalDiskInfo(ctx)
-		if err != nil {
-			return nil, err
-		}
-		totalMb, err := strconv.ParseInt(diskInfo.Data.DiskSize, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed convert disk size into integer: %+v", err)
-		}
-		freeMb, err := strconv.ParseInt(diskInfo.Data.FreeDiskSize, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed convert free size into integer: %+v", err)
-		}
-		total = totalMb * 1024 * 1024
-		used = total - (freeMb * 1024 * 1024)
+	detail, err := d.getDiskQuotaDetail(ctx)
+	if err != nil {
+		return nil, err
 	}
+
+	total := detail.Data.DiskSize * utils.MB
+	used := (detail.Data.DiskSize - detail.Data.FreeDiskSize) * utils.MB
+
 	return &model.StorageDetails{
 		DiskUsage: model.DiskUsage{
 			TotalSpace: total,

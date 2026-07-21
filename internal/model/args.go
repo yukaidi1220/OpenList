@@ -70,6 +70,20 @@ func GetLinkCacheInfo(ctx context.Context) *LinkCacheInfo {
 	return v
 }
 
+func (l *Link) Clone() *Link {
+	return &Link{
+		URL:              l.URL,
+		Header:           l.Header,
+		RangeReader:      l.RangeReader,
+		Expiration:       l.Expiration,
+		Concurrency:      l.Concurrency,
+		PartSize:         l.PartSize,
+		ContentLength:    l.ContentLength,
+		SyncClosers:      utils.NewSyncClosers(l),
+		RequireReference: l.RequireReference,
+	}
+}
+
 type OtherArgs struct {
 	Obj    Obj
 	Method string

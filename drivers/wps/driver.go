@@ -40,7 +40,8 @@ func (d *Wps) Init(ctx context.Context) error {
 
 	d.client = base.NewRestyClient()
 
-	resp, err := d.request(ctx).SetResult(&d.login).Get("https://account.kdocs.cn/api/v3/islogin")
+	d.login = &loginState{}
+	resp, err := d.request(ctx).SetResult(d.login).Get("https://account.kdocs.cn/api/v3/islogin")
 	if err != nil {
 		return err
 	}
@@ -71,12 +72,8 @@ func (d *Wps) Drop(ctx context.Context) error {
 	if d.cron != nil {
 		d.cron.Stop()
 	}
-	if d.client != nil {
-		d.client = nil
-	}
-	if d.login != nil {
-		d.login = nil
-	}
+	d.client = nil
+	d.login = nil
 	return nil
 }
 

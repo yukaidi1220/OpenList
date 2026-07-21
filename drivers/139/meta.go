@@ -15,10 +15,11 @@ type Addition struct {
 	Type                 string `json:"type" type:"select" options:"personal_new,family,group,personal" default:"personal_new"`
 	CloudID              string `json:"cloud_id"`
 	UserDomainID         string `json:"user_domain_id" help:"ud_id in Cookie, fill in to show disk usage"`
-	CustomUploadPartSize       int64  `json:"custom_upload_part_size" type:"number" default:"0" help:"0 for auto"`
-	CustomFamilyUploadHost     string `json:"custom_family_upload_host" help:"Replace adapter.yun.139.com in upload URL, e.g. https://myproxy.example.com"`
-	ReportRealSize             bool   `json:"report_real_size" type:"bool" default:"true" help:"Enable to report the real file size during upload"`
-	UseLargeThumbnail          bool   `json:"use_large_thumbnail" type:"bool" default:"false" help:"Enable to use large thumbnail for images"`
+	CustomUploadPartSize   int64  `json:"custom_upload_part_size" type:"number" default:"0" help:"0 for auto"`
+	CustomFamilyUploadHost string `json:"custom_family_upload_host" help:"Replace adapter.yun.139.com in upload URL, e.g. https://myproxy.example.com"`
+	ReportRealSize         bool   `json:"report_real_size" type:"bool" default:"true" help:"Enable to report the real file size during upload"`
+	UseLargeThumbnail      bool   `json:"use_large_thumbnail" type:"bool" default:"false" help:"Enable to use large thumbnail for images"`
+	UseOldStreamUpload     bool   `json:"use_old_stream_upload" type:"bool" default:"false" help:"Enable to use old stream upload method (not support rapid upload)"`
 }
 
 var config = driver.Config{
