@@ -9,6 +9,7 @@ require (
 	github.com/KarpelesLab/reflink v1.0.2
 	github.com/KirCute/zip v1.0.1
 	github.com/OpenListTeam/go-cache v0.1.0
+	github.com/OpenListTeam/gofakes3 v0.8.0
 	github.com/OpenListTeam/sftpd-openlist v1.0.1
 	github.com/OpenListTeam/tache v0.2.2
 	github.com/OpenListTeam/times v0.1.0
@@ -71,7 +72,7 @@ require (
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	github.com/t3rm1n4l/go-mega v0.0.0-20260630094356-4de2f127f34a
+	github.com/t3rm1n4l/go-mega v0.0.0-20260717075258-c6acd6a5bd04
 	github.com/tchap/go-patricia/v2 v2.3.3
 	github.com/u2takey/ffmpeg-go v0.5.0
 	github.com/upyun/go-sdk/v3 v3.0.4
@@ -151,7 +152,7 @@ require (
 )
 
 require (
-	github.com/OpenListTeam/115-sdk-go v0.2.5
+	github.com/OpenListTeam/115-sdk-go v0.2.6
 	github.com/STARRY-S/zip v0.2.3 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/blevesearch/go-faiss v1.0.25 // indirect
