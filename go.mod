@@ -1,6 +1,7 @@
 module github.com/OpenListTeam/OpenList/v4
 
 go 1.25.0
+
 toolchain go1.26.4
 
 require (
@@ -52,7 +53,6 @@ require (
 	github.com/henrybear327/go-proton-api v1.0.0
 	github.com/ipfs/go-ipfs-api v0.7.0
 	github.com/ipipdotnet/ipdb-go v1.3.3
-	github.com/itsHenry35/gofakes3 v0.0.8
 	github.com/jlaffaye/ftp v0.2.1-0.20251026020404-6602e981a1bb
 	github.com/json-iterator/go v1.1.12
 	github.com/kdomanski/iso9660 v0.4.0
