@@ -14,270 +14,15 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/driver"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 	"github.com/OpenListTeam/OpenList/v4/internal/op"
+	streamPkg "github.com/OpenListTeam/OpenList/v4/internal/stream"
+	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
+	"github.com/avast/retry-go"
 	"github.com/go-resty/resty/v2"
+	"golang.org/x/time/rate"
 )
 
-func (d *GuangYaPan) ensureAccessToken(ctx context.Context) error {
-	if strings.TrimSpace(d.AccessToken) != "" {
-		return nil
-	}
-	if strings.TrimSpace(d.RefreshToken) == "" {
-		if d.canSMSLogin() {
-			return d.loginBySMSCode(ctx)
-		}
-		if d.PhoneNumber != "" {
-			return errors.New("not logged in yet: please fill verify_code and save storage to finish SMS login")
-		}
-		return errors.New("access token is empty")
-	}
-	return d.refreshToken(ctx)
-}
-
-func (d *GuangYaPan) validateToken(ctx context.Context) error {
-	var me userMeResp
-	resp, err := d.accountClient.R().
-		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+d.AccessToken).
-		SetResult(&me).
-		Get("/v1/user/me")
-	if err != nil {
-		return err
-	}
-	if resp.IsError() {
-		return fmt.Errorf("validate token failed: status=%d body=%s", resp.StatusCode(), resp.String())
-	}
-	if strings.TrimSpace(me.Sub) == "" {
-		return errors.New("validate token failed: empty user sub")
-	}
-	return nil
-}
-
-func (d *GuangYaPan) refreshToken(ctx context.Context) error {
-	if strings.TrimSpace(d.RefreshToken) == "" {
-		return errors.New("refresh_token is empty")
-	}
-
-	var out tokenResp
-	resp, err := d.accountClient.R().
-		SetContext(ctx).
-		SetBody(map[string]any{
-			"client_id":     d.ClientID,
-			"grant_type":    "refresh_token",
-			"refresh_token": d.RefreshToken,
-		}).
-		SetResult(&out).
-		Post("/v1/auth/token")
-	if err != nil {
-		return err
-	}
-	if resp.IsError() || out.Error != "" || strings.TrimSpace(out.AccessToken) == "" {
-		errMsg := strings.TrimSpace(out.ErrorDesc)
-		if errMsg == "" {
-			errMsg = strings.TrimSpace(out.Error)
-		}
-		if errMsg == "" {
-			errMsg = strings.TrimSpace(resp.String())
-		}
-		if errMsg == "" {
-			errMsg = fmt.Sprintf("status=%d", resp.StatusCode())
-		}
-		return fmt.Errorf("refresh token failed: %s", errMsg)
-	}
-
-	d.AccessToken = strings.TrimSpace(out.AccessToken)
-	if strings.TrimSpace(out.RefreshToken) != "" {
-		d.RefreshToken = strings.TrimSpace(out.RefreshToken)
-	}
-	op.MustSaveDriverStorage(d)
-	return nil
-}
-
-func (d *GuangYaPan) canSMSLogin() bool {
-	return d.PhoneNumber != "" && d.VerifyCode != ""
-}
-
-func (d *GuangYaPan) loginBySMSCode(ctx context.Context) error {
-	verificationID := strings.TrimSpace(d.VerificationID)
-	if verificationID == "" {
-		var err error
-		verificationID, err = d.requestVerificationID(ctx)
-		if err != nil {
-			return err
-		}
-	}
-
-	var step2 verifyResp
-	resp, err := d.accountClient.R().
-		SetContext(ctx).
-		SetBody(map[string]any{
-			"verification_id":   verificationID,
-			"verification_code": d.VerifyCode,
-			"client_id":         d.ClientID,
-		}).
-		SetResult(&step2).
-		Post("/v1/auth/verification/verify")
-	if err != nil {
-		return err
-	}
-	if resp.IsError() || step2.Error != "" || strings.TrimSpace(step2.VerificationToken) == "" {
-		return fmt.Errorf("verify code failed: %s", d.accountErr(step2.ErrorDesc, step2.Error, resp))
-	}
-
-	var out tokenResp
-	resp, err = d.accountClient.R().
-		SetContext(ctx).
-		SetBody(map[string]any{
-			"verification_code":  d.VerifyCode,
-			"verification_token": step2.VerificationToken,
-			"username":           normalizePhoneE164(d.PhoneNumber),
-			"client_id":          d.ClientID,
-		}).
-		SetResult(&out).
-		Post("/v1/auth/signin")
-	if err != nil {
-		return err
-	}
-	if resp.IsError() || out.Error != "" || strings.TrimSpace(out.AccessToken) == "" {
-		return fmt.Errorf("signin failed: %s", d.accountErr(out.ErrorDesc, out.Error, resp))
-	}
-
-	d.AccessToken = strings.TrimSpace(out.AccessToken)
-	d.RefreshToken = strings.TrimSpace(out.RefreshToken)
-	d.VerificationID = ""
-	// One-time SMS code should not be reused after successful login.
-	d.VerifyCode = ""
-	op.MustSaveDriverStorage(d)
-	return nil
-}
-
-func (d *GuangYaPan) prepareSMSCode(ctx context.Context) error {
-	// Explicit send action should always refresh verification_id.
-	d.VerificationID = ""
-	if err := d.ensureCaptchaToken(ctx, false); err != nil {
-		return err
-	}
-	verificationID, err := d.requestVerificationID(ctx)
-	if err != nil {
-		return err
-	}
-	d.VerificationID = verificationID
-	d.SendCode = false
-	op.MustSaveDriverStorage(d)
-	return nil
-}
-
-func (d *GuangYaPan) requestVerificationID(ctx context.Context) (string, error) {
-	if d.CaptchaToken != "" {
-		d.accountClient.SetHeader("X-Captcha-Token", d.CaptchaToken)
-	}
-
-	var step1 verificationResp
-	resp, err := d.accountClient.R().
-		SetContext(ctx).
-		SetBody(map[string]any{
-			"phone_number": normalizePhoneE164(d.PhoneNumber),
-			"target":       "ANY",
-			"client_id":    d.ClientID,
-		}).
-		SetResult(&step1).
-		Post("/v1/auth/verification")
-	if err != nil {
-		return "", err
-	}
-	if resp.IsError() || step1.Error != "" || strings.TrimSpace(step1.VerificationID) == "" {
-		// If captcha token is expired/invalid, refresh it once and retry.
-		if strings.Contains(step1.Error, "captcha_invalid") || strings.Contains(step1.ErrorDesc, "captcha_token expired") {
-			if err := d.ensureCaptchaToken(ctx, true); err == nil {
-				return d.requestVerificationID(ctx)
-			}
-		}
-		return "", fmt.Errorf("request verification failed: %s", d.accountErr(step1.ErrorDesc, step1.Error, resp))
-	}
-	return strings.TrimSpace(step1.VerificationID), nil
-}
-
-func (d *GuangYaPan) ensureCaptchaToken(ctx context.Context, force bool) error {
-	if !force && d.CaptchaToken != "" {
-		d.accountClient.SetHeader("X-Captcha-Token", d.CaptchaToken)
-		return nil
-	}
-
-	var out captchaInitResp
-	resp, err := d.accountClient.R().
-		SetContext(ctx).
-		SetBody(map[string]any{
-			"client_id": d.ClientID,
-			"action":    "POST:/v1/auth/verification",
-			"device_id": d.DeviceID,
-			"meta": map[string]any{
-				"username":           normalizePhoneE164(d.PhoneNumber),
-				"phone_number":       normalizePhoneE164(d.PhoneNumber),
-				"VERIFICATION_PHONE": normalizePhoneE164(d.PhoneNumber),
-			},
-		}).
-		SetResult(&out).
-		Post("/v1/shield/captcha/init")
-	if err != nil {
-		return err
-	}
-	if resp.IsError() || out.Error != "" || strings.TrimSpace(out.CaptchaToken) == "" {
-		return fmt.Errorf("init captcha token failed: %s", d.accountErr(out.ErrorDesc, out.Error, resp))
-	}
-	d.CaptchaToken = strings.TrimSpace(out.CaptchaToken)
-	d.accountClient.SetHeader("X-Captcha-Token", d.CaptchaToken)
-	op.MustSaveDriverStorage(d)
-	return nil
-}
-
-func normalizeCaptchaUsername(phone string) string {
-	p := strings.TrimSpace(phone)
-	p = strings.ReplaceAll(p, " ", "")
-	p = strings.TrimPrefix(p, "+")
-	// Keep only digits.
-	b := make([]rune, 0, len(p))
-	for _, ch := range p {
-		if ch >= '0' && ch <= '9' {
-			b = append(b, ch)
-		}
-	}
-	digits := string(b)
-	// Mainland number normalization: +86xxxxxxxxxxx -> xxxxxxxxxxx
-	if strings.HasPrefix(digits, "86") && len(digits) > 11 {
-		digits = digits[2:]
-	}
-	return digits
-}
-
-func normalizePhoneE164(phone string) string {
-	p := strings.TrimSpace(phone)
-	if p == "" {
-		return ""
-	}
-	p = strings.ReplaceAll(p, " ", "")
-	if strings.HasPrefix(p, "+") {
-		// Format as "+86 1xxxxxxxxxx" to match browser payload expectations.
-		if strings.HasPrefix(p, "+86") && len(p) > 3 {
-			rest := strings.TrimPrefix(p, "+86")
-			return "+86 " + rest
-		}
-		return p
-	}
-	// If raw mainland number is provided, normalize with +86 prefix.
-	digits := normalizeCaptchaUsername(p)
-	if len(digits) == 11 {
-		return "+86 " + digits
-	}
-	return p
-}
-
-func (d *GuangYaPan) setTempStatus(status string) {
-	// initStorage sets status to WORK after Init returns, so we update it shortly after.
-	time.AfterFunc(200*time.Millisecond, func() {
-		d.GetStorage().SetStatus(status)
-		op.MustSaveDriverStorage(d)
-	})
-}
+// --- HTTP request helpers ---
 
 func (d *GuangYaPan) accountErr(desc, short string, resp *resty.Response) string {
 	msg := strings.TrimSpace(desc)
@@ -296,9 +41,17 @@ func (d *GuangYaPan) accountErr(desc, short string, resp *resty.Response) string
 	return msg
 }
 
+func (d *GuangYaPan) apiRateLimitWait(ctx context.Context, path string) error {
+	value, _ := d.apiRateLimit.LoadOrStore(path, rate.NewLimiter(rate.Every(apiRateInterval), 1))
+	return value.(*rate.Limiter).Wait(ctx)
+}
+
 func (d *GuangYaPan) postAPI(ctx context.Context, path string, body any, out any) error {
-	if strings.TrimSpace(d.AccessToken) == "" {
-		return errors.New("access token is empty")
+	if err := d.ensureAccessToken(ctx); err != nil {
+		return err
+	}
+	if err := d.apiRateLimitWait(ctx, path); err != nil {
+		return err
 	}
 	resp, err := d.apiClient.R().
 		SetContext(ctx).
@@ -332,6 +85,19 @@ func (d *GuangYaPan) postAPI(ctx context.Context, path string, body any, out any
 	return nil
 }
 
+func (d *GuangYaPan) setTempStatus(status string) {
+	if d.statusTimer != nil {
+		d.statusTimer.Stop()
+	}
+	// initStorage sets status to WORK after Init returns, so we update it shortly after.
+	d.statusTimer = time.AfterFunc(200*time.Millisecond, func() {
+		d.GetStorage().SetStatus(status)
+		op.MustSaveDriverStorage(d)
+	})
+}
+
+// --- Task polling helpers ---
+
 func (d *GuangYaPan) waitTaskDone(ctx context.Context, taskID string) error {
 	const (
 		maxTry   = 30
@@ -344,7 +110,7 @@ func (d *GuangYaPan) waitTaskDone(ctx context.Context, taskID string) error {
 		}, &out); err != nil {
 			return err
 		}
-		if !strings.EqualFold(strings.TrimSpace(out.Msg), "success") {
+		if !isSuccessMsg(out.Msg) {
 			return fmt.Errorf("get task status failed: %s", strings.TrimSpace(out.Msg))
 		}
 		switch out.Data.Status {
@@ -365,6 +131,8 @@ func (d *GuangYaPan) waitTaskDone(ctx context.Context, taskID string) error {
 	return fmt.Errorf("task %s timeout", taskID)
 }
 
+// --- Upload helpers ---
+
 func (d *GuangYaPan) getUploadToken(ctx context.Context, parentID, name string, size int64) (*uploadTokenData, int, error) {
 	var out uploadTokenResp
 	err := d.postAPI(ctx, "/nd.bizuserres.s/v1/get_res_center_token", map[string]any{
@@ -379,11 +147,17 @@ func (d *GuangYaPan) getUploadToken(ctx context.Context, parentID, name string, 
 		return nil, 0, err
 	}
 	msg := strings.TrimSpace(out.Msg)
-	if msg != "" && !strings.EqualFold(msg, "success") {
+	if !isSuccessMsg(msg) && !isUploadAlreadyDone(msg) {
 		return nil, out.Code, fmt.Errorf("get upload token failed: %s", msg)
 	}
 	if out.Data.TaskID == "" {
 		return nil, out.Code, errors.New("get upload token failed: empty task id")
+	}
+	// When the backend reports the file is already uploaded/instant-uploaded,
+	// it returns a valid TaskID without OSS credentials.
+	// Mark it so the caller can skip the real upload and just wait for the task.
+	if out.Code == 156 || isUploadAlreadyDone(msg) {
+		out.Data.AlreadyDone = true
 	}
 	if out.Data.AccessKeyID == "" {
 		out.Data.AccessKeyID = out.Data.Creds.AccessKeyID
@@ -459,53 +233,53 @@ func (d *GuangYaPan) multipartUploadToOSS(ctx context.Context, bucket *oss.Bucke
 
 	total := file.GetSize()
 	partCount := int((total + partSize - 1) / partSize)
+
+	// Use StreamSectionReader for seekable, retryable chunk reads (hybrid cache).
+	ss, err := streamPkg.NewStreamSectionReader(file, int(partSize), &up)
+	if err != nil {
+		return err
+	}
+
 	parts := make([]oss.UploadPart, 0, partCount)
-	var uploaded int64
-	partNumber := 1
-
-	for uploaded < total {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		curPartSize := partSize
-		left := total - uploaded
-		if left < curPartSize {
-			curPartSize = left
+	for i := 0; i < partCount; i++ {
+		if utils.IsCanceled(ctx) {
+			return ctx.Err()
 		}
 
-		reader := io.LimitReader(file, curPartSize)
-		part, err := bucket.UploadPart(imur, driver.NewLimitedUploadStream(ctx, reader), curPartSize, partNumber)
+		offset := int64(i) * partSize
+		length := partSize
+		if remain := total - offset; length > remain {
+			length = remain
+		}
+
+		rd, err := ss.GetSectionReader(offset, length)
 		if err != nil {
 			return err
 		}
-		parts = append(parts, part)
-		uploaded += curPartSize
-		partNumber++
-		if total > 0 {
-			up(100 * float64(uploaded) / float64(total))
+
+		var part oss.UploadPart
+		err = retry.Do(func() error {
+			rd.Seek(0, io.SeekStart)
+			var uploadErr error
+			part, uploadErr = bucket.UploadPart(imur, driver.NewLimitedUploadStream(ctx, rd), length, i+1)
+			return uploadErr
+		},
+			retry.Context(ctx),
+			retry.Attempts(3),
+			retry.DelayType(retry.BackOffDelay),
+			retry.Delay(time.Second))
+		ss.FreeSectionReader(rd)
+		if err != nil {
+			return fmt.Errorf("failed to upload part %d: %w", i+1, err)
 		}
+		parts = append(parts, part)
 	}
 
 	_, err = bucket.CompleteMultipartUpload(imur, parts)
 	return err
 }
 
-func calcUploadPartSize(size int64) int64 {
-	const (
-		mb = int64(1024 * 1024)
-		gb = int64(1024 * 1024 * 1024)
-	)
-	switch {
-	case size <= 100*mb:
-		return 1 * mb
-	case size <= 16*gb:
-		return 2 * mb
-	case size <= 160*gb:
-		return 4 * mb
-	default:
-		return 8 * mb
-	}
-}
+// --- Normalization helpers ---
 
 func normalizeOSSEndpoint(endpoint, bucket string) string {
 	ep := strings.TrimSpace(endpoint)
@@ -548,4 +322,86 @@ func randomDeviceID() string {
 		return "0123456789abcdef0123456789abcdef"
 	}
 	return hex.EncodeToString(b)
+}
+
+func normalizeCaptchaUsername(phone string) string {
+	p := strings.TrimSpace(phone)
+	p = strings.ReplaceAll(p, " ", "")
+	p = strings.TrimPrefix(p, "+")
+	// Keep only digits.
+	b := make([]rune, 0, len(p))
+	for _, ch := range p {
+		if ch >= '0' && ch <= '9' {
+			b = append(b, ch)
+		}
+	}
+	digits := string(b)
+	// Mainland number normalization: +86xxxxxxxxxxx -> xxxxxxxxxxx
+	if strings.HasPrefix(digits, "86") && len(digits) > 11 {
+		digits = digits[2:]
+	}
+	return digits
+}
+
+func normalizePhoneE164(phone string) string {
+	p := strings.TrimSpace(phone)
+	if p == "" {
+		return ""
+	}
+	p = strings.ReplaceAll(p, " ", "")
+	if strings.HasPrefix(p, "+") {
+		// Format as "+86 1xxxxxxxxxx" to match browser payload expectations.
+		if strings.HasPrefix(p, "+86") && len(p) > 3 {
+			rest := strings.TrimPrefix(p, "+86")
+			return "+86 " + rest
+		}
+		return p
+	}
+	// If raw mainland number is provided, normalize with +86 prefix.
+	digits := normalizeCaptchaUsername(p)
+	if len(digits) == 11 {
+		return "+86 " + digits
+	}
+	return p
+}
+
+func calcUploadPartSize(size int64) int64 {
+	const (
+		mb = int64(1024 * 1024)
+		gb = int64(1024 * 1024 * 1024)
+	)
+	switch {
+	case size <= 100*mb:
+		return 1 * mb
+	case size <= 16*gb:
+		return 2 * mb
+	case size <= 160*gb:
+		return 4 * mb
+	default:
+		return 8 * mb
+	}
+}
+
+// isUploadAlreadyDone reports whether the upload-token response indicates the
+// file was already uploaded (instant upload). In that case the backend returns
+// a valid TaskID but no OSS credentials, and we should just wait for the task
+// instead of starting a real upload.
+func isUploadAlreadyDone(msg string) bool {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return false
+	}
+	if strings.EqualFold(msg, "上传已完成") {
+		return true
+	}
+	if strings.EqualFold(msg, "upload completed") {
+		return true
+	}
+	if strings.EqualFold(msg, "already uploaded") {
+		return true
+	}
+	if strings.EqualFold(msg, "秒传成功") {
+		return true
+	}
+	return false
 }
