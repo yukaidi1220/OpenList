@@ -47,9 +47,13 @@ jobs:
           changes_file=.changes.tmp
           range=""
 
+          # Cap the number of commits so the changelog stays well under
+          # GitHub's 125000-character release notes body limit.
+          MAX_COMMITS=500
+
           if [ -n "$PREV_BETA_SHA" ]; then
             range="$PREV_BETA_SHA..$GITHUB_SHA"
-            git log --no-merges --pretty="- %s (%h)" "$range" > "$changes_file" || true
+            git log --no-merges -n "$MAX_COMMITS" --pretty="- %s (%h)" "$range" > "$changes_file" || true
           else
             git log --no-merges -n 30 --pretty="- %s (%h)" > "$changes_file" || true
           fi
@@ -65,10 +69,33 @@ jobs:
             echo
             if [ -s "$changes_file" ]; then
               cat "$changes_file"
+              if [ "$(wc -l < "$changes_file")" -ge "$MAX_COMMITS" ]; then
+                echo
+                echo "> Changelog limited to the latest $MAX_COMMITS commits."
+              fi
             else
               echo "- No user-facing changes in this range"
             fi
           } > CHANGELOG.md
+
+          # Final safety net: GitHub rejects release notes bodies over 125000
+          # characters with HTTP 422. Truncate to whole lines if we ever exceed it.
+          MAX_CHARS=100000
+          if [ "$(wc -c < CHANGELOG.md)" -gt "$MAX_CHARS" ]; then
+            echo "Changelog is $(wc -c < CHANGELOG.md) bytes, truncating to $MAX_CHARS chars"
+            awk -v max="$MAX_CHARS" '
+              {
+                if (len + length($0) + 1 > max) {
+                  print "..."
+                  print "> Changelog truncated to fit GitHub release body limits."
+                  exit
+                }
+                len += length($0) + 1
+                print
+              }
+            ' CHANGELOG.md > CHANGELOG.tmp
+            mv CHANGELOG.tmp CHANGELOG.md
+          fi
 
           rm -f "$changes_file"
 
