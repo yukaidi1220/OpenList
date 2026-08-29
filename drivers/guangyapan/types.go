@@ -84,7 +84,8 @@ type commonResp struct {
 	Msg  string `json:"msg"`
 }
 
-type deleteResp struct {
+// taskResp is used for async operations (delete, move, copy) that return a task ID.
+type taskResp struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
@@ -108,6 +109,7 @@ type uploadTokenResp struct {
 
 type uploadTokenData struct {
 	TaskID          string `json:"taskId"`
+	AlreadyDone     bool   `json:"-"`
 	ObjectPath      string `json:"objectPath"`
 	Provider        any    `json:"provider"`
 	Region          string `json:"region"`
@@ -133,17 +135,93 @@ type taskInfoResp struct {
 	} `json:"data"`
 }
 
+// assetsInfoResp is the response for storage details query.
 type assetsInfoResp struct {
+	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
 		TotalSpaceSize int64 `json:"totalSpaceSize"`
 		UsedSpaceSize  int64 `json:"usedSpaceSize"`
-		// VipStatus      int   `json:"vipStatus"`
-		// VipLeftTime    int   `json:"vipLeftTime"`
-		// SvipStatus     int   `json:"svipStatus"`
-		// VipExpireTime  int   `json:"vipExpireTime"`
-		// SystemTime     int   `json:"systemTime"`
 	} `json:"data"`
+}
+
+func (r assetsInfoResp) IsSuccess() bool {
+	return isSuccessMsg(r.Msg)
+}
+
+// Offline download types
+
+type offlineResolveResp struct {
+	Code int                `json:"code"`
+	Msg  string             `json:"msg"`
+	Data OfflineResolveData `json:"data"`
+}
+
+type OfflineResolveData struct {
+	ResType   int               `json:"resType"`
+	BTResInfo *OfflineBTResInfo `json:"btResInfo"`
+	URL       string            `json:"url"`
+}
+
+type OfflineBTResInfo struct {
+	InfoHash       string           `json:"infoHash"`
+	FileName       string           `json:"fileName"`
+	FileSize       int64            `json:"fileSize"`
+	SubfilesNum    int              `json:"subfilesNum"`
+	Subfiles       []OfflineSubfile `json:"subfiles"`
+	CreateTime     int64            `json:"createTime"`
+	ExcludeIndices []int            `json:"excludeIndices"`
+}
+
+type OfflineSubfile struct {
+	FileName  string `json:"fileName"`
+	FileIndex *int   `json:"fileIndex"`
+	FileSize  int64  `json:"fileSize"`
+}
+
+type offlineCreateResp struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		TaskID string `json:"taskId"`
+		URL    string `json:"url"`
+	} `json:"data"`
+}
+
+type offlineDeleteResp struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		TaskIDs []string `json:"taskIds"`
+	} `json:"data"`
+}
+
+type offlineListResp struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		StatusCounts []struct {
+			Status int `json:"status"`
+			Count  int `json:"count"`
+		} `json:"statusCounts"`
+		Cursor string        `json:"cursor"`
+		List   []OfflineTask `json:"list"`
+		Total  int           `json:"total"`
+	} `json:"data"`
+}
+
+type OfflineTask struct {
+	TaskID     string `json:"taskId"`
+	FileName   string `json:"fileName"`
+	TotalSize  int64  `json:"totalSize"`
+	Status     int    `json:"status"`
+	CreateTime int64  `json:"createTime"`
+	Res        string `json:"res"`
+	ResType    int    `json:"resType"`
+	Progress   int    `json:"progress"`
+	FileID     string `json:"fileId"`
+	IsDir      bool   `json:"isDir"`
+	Exist      bool   `json:"exist"`
 }
 
 func unixOrZero(v int64) time.Time {

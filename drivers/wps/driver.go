@@ -48,7 +48,6 @@ func (d *Wps) Init(ctx context.Context) error {
 	if !resp.IsSuccess() {
 		return fmt.Errorf("failed to check login status, status code: %d, body: %s", resp.StatusCode(), resp.String())
 	}
-
 	if d.AutoSign {
 		d.cron = cron.NewCron(time.Hour * 6)
 		d.cron.Do(func() {

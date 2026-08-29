@@ -6,19 +6,20 @@ import (
 )
 
 type Addition struct {
-	driver.RootID
+	RootPath       string `json:"root_path" help:"Full path in GuangYaPan cloud drive"`
 	PhoneNumber    string `json:"phone_number" type:"text" help:"Phone number for SMS login, e.g. +86 13800000000"`
-	CaptchaToken   string `json:"captcha_token" type:"text" help:"Captcha token required by /v1/auth/verification"`
+	CaptchaToken   string `json:"captcha_token" help:"Captcha token required by /v1/auth/verification"`
 	SendCode       bool   `json:"send_code" type:"bool" help:"Set true and save to send SMS code, it auto-resets to false after sending"`
 	VerifyCode     string `json:"verify_code" type:"text" help:"SMS verification code used with phone_number; fill then save to finish login"`
 	VerificationID string `json:"verification_id" type:"text" help:"Auto-generated after sending SMS code; do not edit manually"`
-	AccessToken    string `json:"access_token" type:"text" help:"Bearer access token (optional if refresh_token is provided)"`
-	RefreshToken   string `json:"refresh_token" type:"text" help:"Refresh token for auto-login/auto-refresh"`
-	ClientID       string `json:"client_id" default:"aMe-8VSlkrbQXpUR"`
+	AccessToken    string `json:"access_token" help:"Bearer access token (optional if refresh_token is provided)"`
+	RefreshToken   string `json:"refresh_token" help:"Refresh token for auto-login/auto-refresh"`
+	ClientID       string `json:"client_id" required:"true" help:"Client ID for GuangYaPan API, must be provided"`
 	DeviceID       string `json:"device_id" help:"Optional custom device id (32 hex chars), auto-generated when empty"`
+	DeviceSign     string `json:"device_sign" help:"Optional custom X-Device-Sign header (generated from device_id when empty)"`
 	PageSize       int    `json:"page_size" type:"number" default:"100"`
-	OrderBy        int    `json:"order_by" type:"number" default:"3" help:"0:name,1:size,2:create_time,3:update_time"`
-	SortType       int    `json:"sort_type" type:"number" default:"1" help:"0:asc,1:desc"`
+	OrderBy        int    `json:"order_by" type:"number" options:"0,1,2,3,4" default:"3" help:"Sort field used by the file list"`
+	SortType       int    `json:"sort_type" type:"number" options:"0,1" default:"1" help:"Sort direction used by the file list"`
 }
 
 var config = driver.Config{
