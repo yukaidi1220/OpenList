@@ -39,6 +39,7 @@ var (
 // assembled into storage on completion, instead of being buffered in memory.
 type s3Backend struct {
 	meta    *sync.Map
+	listDir func(context.Context, string) ([]model.Obj, error)
 	uploads *sync.Map // map[gofakes3.UploadID]*multipartState
 }
 
@@ -47,6 +48,7 @@ func newBackend() gofakes3.Backend {
 	b := &s3Backend{
 		meta:    new(sync.Map),
 		uploads: new(sync.Map),
+		listDir: getDirEntries,
 	}
 	b.startReaper()
 	return b
@@ -90,10 +92,9 @@ func (b *s3Backend) ListBucket(ctx context.Context, bucketName string, prefix *g
 		prefix.HasDelimiter = false
 	}
 
-	response := gofakes3.NewObjectList()
 	path, remaining := prefixParser(prefix)
 
-	err = b.entryListR(bucketPath, path, remaining, prefix.HasDelimiter, response)
+	response, err := b.listPage(ctx, bucketPath, path, remaining, prefix.HasDelimiter, page)
 	if err == gofakes3.ErrNoSuchKey {
 		// AWS just returns an empty list
 		response = gofakes3.NewObjectList()
@@ -101,7 +102,7 @@ func (b *s3Backend) ListBucket(ctx context.Context, bucketName string, prefix *g
 		return nil, err
 	}
 
-	return b.pager(response, page)
+	return response, nil
 }
 
 // HeadObject returns the fileinfo for the given object name.
@@ -151,6 +152,8 @@ func (b *s3Backend) HeadObject(ctx context.Context, bucketName, objectName strin
 
 // GetObject fetchs the object from the filesystem.
 func (b *s3Backend) GetObject(ctx context.Context, bucketName, objectName string, rangeRequest *gofakes3.ObjectRangeRequest) (s3Obj *gofakes3.Object, err error) {
+	defer func() { err = mapBackendError(err) }()
+
 	bucket, err := getBucketByName(bucketName)
 	if err != nil {
 		return nil, err
@@ -192,7 +195,7 @@ func (b *s3Backend) GetObject(ctx context.Context, bucketName, objectName string
 		return nil, fmt.Errorf("the remote storage driver need to be enhanced to support s3")
 	}
 
-	var rd io.Reader
+	var rd io.ReadCloser
 	if rnge != nil {
 		rd, err = rrf.RangeRead(ctx, http_range.Range(*rnge))
 	} else {
@@ -214,6 +217,7 @@ func (b *s3Backend) GetObject(ctx context.Context, bucketName, objectName string
 			meta[k] = v
 		}
 	}
+	closers := utils.NewClosers(rd, link)
 
 	return &gofakes3.Object{
 		// Name: gofakes3.URLEncode(objectName),
@@ -222,7 +226,7 @@ func (b *s3Backend) GetObject(ctx context.Context, bucketName, objectName string
 		Metadata: meta,
 		Size:     size,
 		Range:    rnge,
-		Contents: utils.ReadCloser{Reader: rd, Closer: link},
+		Contents: utils.ReadCloser{Reader: rd, Closer: &closers},
 	}, nil
 }
 
@@ -317,6 +321,9 @@ func (b *s3Backend) putStream(
 		Obj:      &obj,
 		Reader:   input,
 		Mimetype: meta["Content-Type"],
+	}
+	if stream.Mimetype == "" {
+		stream.Mimetype = "application/octet-stream"
 	}
 
 	err = fs.PutDirectly(ctx, reqPath, stream)

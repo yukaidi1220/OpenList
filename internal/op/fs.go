@@ -291,20 +291,6 @@ func Link(ctx context.Context, storage driver.Driver, path string, args model.Li
 	}
 }
 
-// GetLinkCacheInfoFromLink 从 link 中获取缓存信息，优先使用 CacheInfo，回退到 Time/Expiration
-func GetLinkCacheInfoFromLink(link *model.Link) *model.LinkCacheInfo {
-	if link.CacheInfo != nil {
-		return link.CacheInfo
-	}
-	if link.Expiration != nil && link.Time != nil {
-		return &model.LinkCacheInfo{
-			Time:       *link.Time,
-			Expiration: *link.Expiration,
-		}
-	}
-	return nil
-}
-
 // Other api
 func Other(ctx context.Context, storage driver.Driver, args model.FsOtherArgs) (any, error) {
 	if storage.Config().CheckStatus && storage.GetStorage().Status != WORK {
