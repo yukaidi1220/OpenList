@@ -153,39 +153,15 @@ func (d *CloudreveV4) Get(ctx context.Context, path string) (model.Obj, error) {
 }
 
 func (d *CloudreveV4) Link(ctx context.Context, file model.Obj, args model.LinkArgs) (*model.Link, error) {
-	requestFileURL := func(noCache bool) (*FileUrlResp, error) {
-		var fileURL FileUrlResp
-		body := base.Json{
-			"uris":     []string{file.GetPath()},
-			"download": true,
-		}
-		if noCache {
-			body["no_cache"] = true
-		}
-		err := d.request(http.MethodPost, "/file/url", func(req *resty.Request) {
-			req.SetBody(body)
-		}, &fileURL)
-		if err != nil {
-			return nil, err
-		}
-		if len(fileURL.Urls) == 0 {
-			return nil, errors.New("server returns no url")
-		}
-		return &fileURL, nil
-	}
-
-	fileURL, err := requestFileURL(false)
+	fileURL, err := d.getFileURL(file.GetPath(), false)
 	if err != nil {
 		return nil, err
 	}
-	// parse signed URL expiration and decide cache strategy
+
 	signedExpires, signed := parseObjectStorageSignedURLExpiration(fileURL.Urls[0].URL)
-	// if the signed URL is already expired or will expire in 30 seconds,
-	// refresh it with no-cache request to avoid getting an expired URL from cache
 	cacheDecision := decideFileURLCache(signedExpires, signed, fileURL.Expires, true)
 	if cacheDecision.RefreshNoCache {
-		// request url with no-cache
-		fileURL, err = requestFileURL(true)
+		fileURL, err = d.getFileURL(file.GetPath(), true)
 		if err != nil {
 			return nil, err
 		}
@@ -204,6 +180,27 @@ func (d *CloudreveV4) Link(ctx context.Context, file model.Obj, args model.LinkA
 			"User-Agent": {d.getUA()},
 		},
 	}, nil
+}
+
+func (d *CloudreveV4) getFileURL(path string, noCache bool) (*FileUrlResp, error) {
+	var fileURL FileUrlResp
+	body := base.Json{
+		"uris":     []string{path},
+		"download": true,
+	}
+	if noCache {
+		body["no_cache"] = true
+	}
+	err := d.request(http.MethodPost, "/file/url", func(req *resty.Request) {
+		req.SetBody(body)
+	}, &fileURL)
+	if err != nil {
+		return nil, err
+	}
+	if len(fileURL.Urls) == 0 {
+		return nil, errors.New("server returns no url")
+	}
+	return &fileURL, nil
 }
 
 func (d *CloudreveV4) MakeDir(ctx context.Context, parentDir model.Obj, dirName string) error {
