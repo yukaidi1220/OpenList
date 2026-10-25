@@ -213,8 +213,8 @@ func (d *Yun139) request(url string, method string, callback base.ReqCallback, r
 				return nil, err // Return unmarshal error
 			}
 			if createBatchOprTaskResp, ok := resp.(*CreateBatchOprTaskResp); ok {
-				log.Debugf("[139] CreateBatchOprTaskResp.Result.ResultCode: %s", createBatchOprTaskResp.Result.ResultCode)
-				if createBatchOprTaskResp.Result.ResultCode == "0" {
+				log.Debugf("[139] CreateBatchOprTaskResp.Data.Result.ResultCode: %s", createBatchOprTaskResp.Data.Result.ResultCode)
+				if createBatchOprTaskResp.Data.Result.ResultCode == "0" {
 					goto SUCCESS_PROCESS
 				}
 			}
@@ -375,17 +375,21 @@ func (d *Yun139) familyGetFiles(catalogID string) ([]model.Obj, error) {
 			"sortDirection": 1,
 		})
 		// 传入 catalogID 是文件夹的ID，而不是完整路径
-		// 当传入catalogID为家庭云根目录时，直接留空
-		if catalogID == d.ProviderRoot {
-			data["catalogID"] = ""
+		// 当传入catalogID为根目录时，不能使用 catalogID
+		if catalogID == d.RootFolderID {
+			delete(data, "catalogID")
 		}
 		var resp QueryContentListResp
 		_, err := d.post("/orchestration/familyCloud-rebuild/content/v1.2/queryContentList", data, &resp)
 		if err != nil {
 			return nil, err
 		}
-		// 返回的是完整的Path: root:/<UserRootID>/<CatalogID>/.../<CatalogID>
-		path := resp.Data.Path
+		dirPath := resp.Data.Path
+		if catalogID == d.RootFolderID {
+			d.RootPath = dirPath
+		}
+		log.Infof("[139] familyGetFiles: catalogID=%s, dirPath=%s, RootFolderID=%s, RootPath=%s",
+			catalogID, dirPath, d.RootFolderID, d.RootPath)
 		for _, catalog := range resp.Data.CloudCatalogList {
 			f := model.Object{
 				ID:       catalog.CatalogID,
@@ -394,7 +398,7 @@ func (d *Yun139) familyGetFiles(catalogID string) ([]model.Obj, error) {
 				IsFolder: true,
 				Modified: getTime(catalog.LastUpdateTime),
 				Ctime:    getTime(catalog.CreateTime),
-				Path:     path, // 文件夹上一级的Path
+				Path:     path.Join(dirPath, catalog.CatalogID), // 文件夹自身的服务端路径
 			}
 			files = append(files, &f)
 		}
@@ -406,7 +410,7 @@ func (d *Yun139) familyGetFiles(catalogID string) ([]model.Obj, error) {
 					Size:     content.ContentSize,
 					Modified: getTime(content.LastUpdateTime),
 					Ctime:    getTime(content.CreateTime),
-					Path:     path, // 文件所在目录的Path
+					Path:     dirPath, // 文件所在目录的Path
 				},
 				Thumbnail: model.Thumbnail{Thumbnail: content.ThumbnailURL},
 				// Thumbnail: content.BigthumbnailURL,
@@ -1050,6 +1054,13 @@ func (d *Yun139) getAuthorization() string {
 		return d.ref.getAuthorization()
 	}
 	return d.Authorization
+}
+
+func (d *Yun139) getRootPath() string {
+	if d.ref != nil {
+		return d.ref.getRootPath()
+	}
+	return d.RootPath
 }
 
 func (d *Yun139) getAccount() string {

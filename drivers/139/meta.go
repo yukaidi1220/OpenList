@@ -17,11 +17,12 @@ type Addition struct {
 	LinkID               string `json:"link_id" type:"text" help:"Multiple shares are separated by commas or new lines. Use link_id#password for password-protected shares."`
 	CloudID              string `json:"cloud_id"`
 	UserDomainID         string `json:"user_domain_id" help:"ud_id in Cookie, fill in to show disk usage"`
-	CustomUploadPartSize int64  `json:"custom_upload_part_size" type:"number" default:"0" help:"0 for auto"`
-	ReportRealSize       bool   `json:"report_real_size" type:"bool" default:"true" help:"Enable to report the real file size during upload"`
-	UseLargeThumbnail    bool   `json:"use_large_thumbnail" type:"bool" default:"false" help:"Enable to use large thumbnail for images"`
-	UseOldStreamUpload   bool   `json:"use_old_stream_upload" type:"bool" default:"false" help:"Enable to use old stream upload method (not support rapid upload)"`
-	ClientType           string `json:"client_type" type:"select" options:"web,pc" default:"web" help:"Client type reported to the personal cloud API. web (9) allows uploading files up to 50 GB; pc (13) raises the single file upload limit to 500 GB."`
+	CustomUploadPartSize   int64  `json:"custom_upload_part_size" type:"number" default:"0" help:"0 for auto"`
+	CustomFamilyUploadHost string `json:"custom_family_upload_host" help:"Replace adapter.yun.139.com in upload URL, e.g. https://myproxy.example.com"`
+	ReportRealSize         bool   `json:"report_real_size" type:"bool" default:"true" help:"Enable to report the real file size during upload"`
+	UseLargeThumbnail      bool   `json:"use_large_thumbnail" type:"bool" default:"false" help:"Enable to use large thumbnail for images"`
+	UseOldStreamUpload     bool   `json:"use_old_stream_upload" type:"bool" default:"false" help:"Enable to use old stream upload method (not support rapid upload)"`
+	ClientType             string `json:"client_type" type:"select" options:"web,pc" default:"web" help:"Client type reported to the personal cloud API. web (9) allows uploading files up to 50 GB; pc (13) raises the single file upload limit to 500 GB."`
 }
 
 var config = driver.Config{
