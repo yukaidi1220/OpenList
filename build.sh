@@ -97,7 +97,21 @@ AssertStaticBinary() {
 }
 
 FetchWebRolling() {
-  pre_release_json=$(eval "curl -fsSL --max-time 2 $githubAuthArgs -H \"Accept: application/vnd.github.v3+json\" \"https://api.github.com/repos/$frontendRepo/releases/tags/rolling\"")
+  # Prefer the "edge" channel (xrgzs publishes fresh builds there; the legacy
+  # "rolling" tag has been stale and English-only since 2026-09). Fall back to
+  # "rolling" for frontend repos that only publish that tag.
+  pre_release_json=""
+  for webReleaseTag in edge rolling; do
+    _json=$(eval "curl -fsSL --max-time 2 $githubAuthArgs -H \"Accept: application/vnd.github.v3+json\" \"https://api.github.com/repos/$frontendRepo/releases/tags/$webReleaseTag\"") || _json=""
+    if [ -n "$_json" ]; then
+      pre_release_json="$_json"
+      break
+    fi
+  done
+  if [ -z "$pre_release_json" ]; then
+    echo "Error: no 'edge' or 'rolling' frontend release found in $frontendRepo" >&2
+    return 1
+  fi
   pre_release_assets=$(echo "$pre_release_json" | jq -r '.assets[].browser_download_url')
   
   # There is no lite for rolling
