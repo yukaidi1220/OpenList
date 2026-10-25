@@ -129,7 +129,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          KEEP=3
+          KEEP=10
           gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
             --jq '.[] | select(.tag_name | test("^[0-9]{12}$")) | .tag_name' \
             | sort -r | tail -n +"$((KEEP + 1))" \

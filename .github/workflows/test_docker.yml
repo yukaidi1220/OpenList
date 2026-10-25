@@ -179,3 +179,27 @@ jobs:
           tags: ${{ steps.meta_alist.outputs.tags }}
           labels: ${{ steps.meta_alist.outputs.labels }}
           platforms: ${{ env.RELEASE_PLATFORMS }}
+
+  cleanup:
+    needs: release_docker
+    name: Prune old image versions
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete image versions beyond the newest 10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          KEEP=10
+          for image in openlist alist; do
+            echo "pruning $image to the newest $KEEP versions"
+            gh api --paginate --slurp "/user/packages/container/$image/versions" \
+              --jq "flatten | sort_by(-.created_at) | .[$KEEP:] | .[].id" \
+              | while read -r id; do
+                  echo "deleting $image version $id"
+                  gh api -X DELETE "/user/packages/container/$image/versions/$id" \
+                    || echo "::warning::failed to delete $image version $id"
+                done
+          done
