@@ -130,6 +130,7 @@ type Config struct {
 	MaxBlockLimit         int         `json:"max_block_limit" env:"MAX_BLOCK_LIMIT"`
 	MaxConnections        int         `json:"max_connections" env:"MAX_CONNECTIONS"`
 	MaxConcurrency        int         `json:"max_concurrency" env:"MAX_CONCURRENCY"`
+	PrefetchChunks        int         `json:"prefetch_chunks" env:"PREFETCH_CHUNKS"`
 	TlsInsecureSkipVerify bool        `json:"tls_insecure_skip_verify" env:"TLS_INSECURE_SKIP_VERIFY"`
 	Tasks                 TasksConfig `json:"tasks" envPrefix:"TASKS_"`
 	Cors                  Cors        `json:"cors" envPrefix:"CORS_"`
@@ -188,6 +189,7 @@ func DefaultConfig(dataDir string) *Config {
 		AutoMemoryLimit:       4,
 		MaxConnections:        0,
 		MaxConcurrency:        64,
+		PrefetchChunks:        0,
 		TlsInsecureSkipVerify: false,
 		Tasks: TasksConfig{
 			Download: TaskConfig{
