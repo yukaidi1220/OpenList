@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -14,13 +15,15 @@ import (
 // rc 协议：POST {endpoint}/{method}，body 为参数 JSON；响应 200 且 body 形如
 // {"result": ...}，失败时为 {"error": "...", "input": ...}（HTTP 4xx/5xx）。
 type rcClient struct {
-	endpoint  string
-	user      string
-	password  string
-	httpCli   *http.Client
+	endpoint string
+	user     string
+	password string
+	httpCli  *http.Client
 }
 
 func newRCClient(endpoint, user, password string) *rcClient {
+	// 用户手填尾斜杠会让 URL 变 //operations/...，rclone mux 直接 404
+	endpoint = strings.TrimSuffix(endpoint, "/")
 	return &rcClient{
 		endpoint: endpoint,
 		user:     user,
@@ -43,7 +46,7 @@ func (c *rcClient) call(ctx context.Context, method string, params map[string]an
 		return fmt.Errorf("rc 请求构造失败: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.user != "" {
+	if c.user != "" || c.password != "" {
 		req.SetBasicAuth(c.user, c.password)
 	}
 	resp, err := c.httpCli.Do(req)
@@ -51,9 +54,15 @@ func (c *rcClient) call(ctx context.Context, method string, params map[string]an
 		return fmt.Errorf("rc 请求失败（%s）: %w", method, err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	// operations/list 无分页，响应体一次全量返回；给个宽松上限并在超限时显式报错，
+	// 而不是让静默截断把 JSON 撕坏报出莫名其妙的解析错误
+	const maxBody = 64 << 20
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return fmt.Errorf("rc 响应读取失败: %w", err)
+	}
+	if len(raw) > maxBody {
+		return fmt.Errorf("rc %s 响应超过 %dMB 上限（目录过大）", method, maxBody>>20)
 	}
 	if resp.StatusCode != http.StatusOK {
 		env := struct {

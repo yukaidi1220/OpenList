@@ -26,6 +26,7 @@ var config = driver.Config{
 	Name:        "Rclone",
 	DefaultRoot: "/",
 	NoUpload:    true,
+	LocalSort:   true,
 }
 
 func init() {

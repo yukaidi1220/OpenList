@@ -34,18 +34,13 @@ func (d *Rclone) fsName() string {
 	return d.RemoteName + ":"
 }
 
-// toRclonePath 把 OpenList 虚拟路径映射为 remote 内的路径
-// （remote_name + root_folder_path 是存储根，虚拟 / 对应它）
+// toRclonePath 把 OpenList 传来的路径映射为 remote 内路径。
+// 注意 IRootPath 约定（对照 webdav/s3 驱动）：op 层传入和驱动产出的 obj.Path
+// 都已含 root_folder_path 前缀（根目录 obj 的 Path 就是 RootFolderPath 本身），
+// 所以这里只做清洗直通，绝不能再 Join 一次根——否则双拼，存储直接打不开。
 func (d *Rclone) toRclonePath(p string) string {
-	rel := strings.TrimPrefix(p, "/")
-	rel = strings.TrimPrefix(rel, ".")
-	if rel == "" {
-		return d.RootFolderPath
-	}
-	if d.RootFolderPath == "" {
-		return rel
-	}
-	return stdpath.Join(d.RootFolderPath, rel)
+	p = strings.ReplaceAll(p, "\\", "/")
+	return strings.Trim(p, "/")
 }
 
 func (d *Rclone) Init(ctx context.Context) error {
@@ -55,13 +50,30 @@ func (d *Rclone) Init(ctx context.Context) error {
 	if d.RemoteName == "" {
 		return errors.New("remote_name 不能为空")
 	}
-	if d.LinkViaExec && d.RcloneBin == "" {
-		return errors.New("启用 link_via_exec 时必须配置 rclone_bin")
+	if strings.HasPrefix(d.RemoteName, "-") {
+		return errors.New("remote_name 不能以 - 开头（会被 rclone 当作 flag）")
+	}
+	if d.LinkViaExec {
+		if d.RcloneBin == "" {
+			return errors.New("启用 link_via_exec 时必须配置 rclone_bin")
+		}
+		if d.RcloneConf == "" {
+			return errors.New("启用 link_via_exec 时必须配置 rclone_conf（子进程的 remote 必须与 rcd 一致）")
+		}
 	}
 	d.client = newRCClient(d.Endpoint, d.RCUser, d.RCPassword)
-	// 用 about 同时校验 rcd 连通性与 remote 名称（一次调用查两个错）
+	// 用 about 校验 rcd 连通性与 remote 名称；再用根路径 list 校验 root_folder_path
+	// （about 不触碰路径，root 配错要到首次 List 才暴露，提前在这里拦）
 	if err := d.client.call(ctx, "operations/about", map[string]any{"fs": d.fsName()}, nil); err != nil {
 		return fmt.Errorf("rcd 连接或 remote 校验失败: %w", err)
+	}
+	var out struct {
+		List []rcListObj `json:"list"`
+	}
+	if err := d.client.call(ctx, "operations/list", map[string]any{
+		"fs": d.fsName(), "remote": d.toRclonePath("/"),
+	}, &out); err != nil {
+		return fmt.Errorf("根目录 list 失败（检查 remote_name 与 root_folder_path）: %w", err)
 	}
 	return nil
 }
@@ -94,6 +106,8 @@ func (d *Rclone) List(ctx context.Context, dir model.Obj, args model.ListArgs) (
 		if it.ModTime != "" {
 			if t, err := time.Parse(time.RFC3339, it.ModTime); err == nil {
 				mod = t
+			} else {
+				log.Debugf("[rclone] ModTime 解析失败（置零）: %q", it.ModTime)
 			}
 		}
 		res = append(res, &model.Object{
@@ -111,8 +125,8 @@ func (d *Rclone) List(ctx context.Context, dir model.Obj, args model.ListArgs) (
 func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) (*model.Link, error) {
 	rpath := d.toRclonePath(file.GetPath())
 	// 主路径：fork 给 backend/command 加了 publiclink 分发。
-	// 调用形状必须是"根 remote + arg 携带 remote 内全路径"——带 path 的目录根 Fs
-	// 会让后端的 uriFor 解析出错（服务端报 Path not exist，实测踩过）
+	// 调用形状：根 remote + arg 携带 remote 内全路径（backend/command 的 handler
+	// 只读 fs/command/opt/arg，没有 path 参数；带目录根的 fs 会让 uriFor 解析错位）
 	var out struct {
 		Result string `json:"result"`
 	}
@@ -123,6 +137,9 @@ func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) 
 	}, &out)
 	if err == nil && out.Result != "" {
 		return &model.Link{URL: out.Result}, nil
+	}
+	if err == nil {
+		err = errors.New("rcd publiclink 返回了空结果")
 	}
 	// 回退：本地 rclone 子进程执行 link
 	if !d.LinkViaExec {
@@ -147,19 +164,14 @@ func (d *Rclone) linkViaExec(ctx context.Context, rpath string) (string, error) 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("rclone link 执行失败: %w（stderr: %s）", err, strings.TrimSpace(stderr.String()))
 	}
-	u := strings.TrimSpace(stdout.String())
-	// Windows 控制台可能带 NOTICE 前缀行，取最后一个 http 开头的 token
-	for _, line := range strings.Split(u, "\n") {
+	// NOTICE 行可能混在输出里，取第一个 http(s) 开头的行
+	for _, line := range strings.Split(stdout.String(), "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "http") {
-			u = line
-			break
+		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
+			return line, nil
 		}
 	}
-	if !strings.HasPrefix(u, "http") {
-		return "", fmt.Errorf("rclone link 输出不是链接: %q", u)
-	}
-	return u, nil
+	return "", fmt.Errorf("rclone link 输出不是链接: %q", strings.TrimSpace(stdout.String()))
 }
 
 var _ driver.Driver = (*Rclone)(nil)
