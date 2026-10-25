@@ -147,14 +147,6 @@ jobs:
             hash: "md5-linux-arm64"
             flags: ""
             goflags: ""
-          - target: "darwin-amd64" # xgo darwin-amd64
-            hash: "md5-darwin-amd64"
-            flags: ""
-            goflags: ""
-          - target: "darwin-arm64" # xgo darwin-arm64
-            hash: "md5-darwin-arm64"
-            flags: ""
-            goflags: ""
           - target: "windows-amd64" # xgo windows-amd64
             hash: "md5-windows-amd64"
             flags: ""
