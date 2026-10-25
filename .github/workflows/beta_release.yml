@@ -124,6 +124,21 @@ jobs:
           make_latest: true
           tag_name: ${{ env.RELEASE_TAG }}
 
+      - name: Prune old timestamped releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          KEEP=3
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq '.[] | select(.tag_name | test("^[0-9]{12}$")) | .tag_name' \
+            | sort -r | tail -n +"$((KEEP + 1))" \
+            | while read -r old_tag; do
+                echo "pruning old release $old_tag"
+                gh release delete "$old_tag" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes \
+                  || echo "::warning::failed to prune $old_tag"
+              done
+
       - name: Upload assets to github artifact
         uses: actions/upload-artifact@v7
         with:

@@ -34,6 +34,25 @@ git push origin main
 - `.github/workflows/build.yml`：xrgzs 基底删除了它（fork 使用自己的 beta_release 工作流），官方每次更新它都会产生 modify/delete 冲突，保持删除即可。
 - `go.mod`/`go.sum` 冲突时不要手工合并，改完代码后跑 `go mod tidy` 重新生成。
 
+## 前端渠道
+
+构建时从 `$FRONTEND_REPO`（默认 xrgzs/OpenList-Frontend）下载 dist 并 `//go:embed` 进二进制。注意 xrgzs 前端的发布渠道：
+
+- `edge`：现行渠道（跟随其 main 更新，多语言完整）
+- `rolling`：旧渠道，2026-09 起停更且只含英语
+
+`build.sh` 的 FetchWebRolling 已改为优先 `edge`、失败回退 `rolling`；合并上游 build.sh 时注意保留该改动。
+
+## Docker 镜像
+
+- `ghcr.io/yukaidi1220/openlist`（`beta`/`main`/`latest` tag）：由 test_docker.yml 每次 push 构建，另推一个 alist 兼容镜像。
+- `ghcr.io/yukaidi1220/aria2`：由 aria2 仓库的 docker-image.yml 构建的运行时镜像（全静态 aria2c，amd64 + arm64 各用原生 runner 编译后合并 manifest，并带容器级 RPC 冒烟测试）。
+- 部署示例见 docker-compose.yml：两容器以相同路径挂载 /downloads，OpenList 后台 aria2 RPC 指向 http://aria2:6800/jsonrpc。
+
+## Release 策略
+
+每次 push 到 main 自动发一个北京时间时间戳标签的 release（`YYYYMMDDHHmm`，北京时间），标记 Latest、非 prerelease；工作流自动只保留最近 3 个，更早的连同 tag 一起清理。
+
 ## xrgzs 重建 main 的含义
 
 xrgzs 每个版本（如 v26.10.22.0）= 官方某个时点的历史 + 一个包含全部增强的 squash 提交，旧 squash 会被 force-push 掉。因此：
