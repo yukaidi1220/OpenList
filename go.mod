@@ -82,7 +82,6 @@ require (
 	golang.org/x/net v0.58.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/time v0.15.0
-	google.golang.org/appengine v1.6.8
 	gopkg.in/ldap.v3 v3.1.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.2
@@ -146,7 +145,6 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
@@ -223,7 +221,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/crackcomm/go-gitignore v0.0.0-20170627025303-887ab5e44cc3 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
@@ -237,11 +234,8 @@ require (
 	github.com/go-webauthn/x v0.3.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/henrybear327/Proton-API-Bridge v1.0.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -271,7 +265,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mr-tron/base58 v1.3.0 // indirect
@@ -289,7 +282,6 @@ require (
 	github.com/multiformats/go-varint v0.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pierrec/lz4/v4 v4.1.27 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/pquerna/cachecontrol v0.1.0 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
