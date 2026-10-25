@@ -225,7 +225,7 @@ func (d *BaiduNetdisk) linkOfficial(file model.Obj, _ model.LinkArgs) (*model.Li
 		return nil, fmt.Errorf("redirect failed, status: %d", res.StatusCode())
 	}
 	// 上面接口返回8小时
-	exp := time.Hour
+	var exp = time.Hour * 8
 	_dl, err := url.Parse(resp.List[0].Dlink)
 	if err == nil {
 		q := _dl.Query()

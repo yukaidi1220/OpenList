@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"time"
 
 	"github.com/OpenListTeam/OpenList/v4/drivers/baidu_netdisk"
 	"github.com/OpenListTeam/OpenList/v4/drivers/base"
 	"github.com/OpenListTeam/OpenList/v4/internal/driver"
+	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 	"github.com/go-resty/resty/v2"
 )
@@ -52,7 +54,8 @@ func (d *BaiduShare) Init(ctx context.Context) error {
 		SetBaseURL("https://pan.baidu.com").
 		SetHeader("User-Agent", "netdisk").
 		SetHeader("Referer", "https://pan.baidu.com").
-		SetCookie(&http.Cookie{Name: "BDUSS", Value: d.ref.Addition.BDUSS})
+		SetCookie(&http.Cookie{Name: "BDUSS", Value: d.ref.Addition.BDUSS}).
+		SetCookie(&http.Cookie{Name: "ndut_fmt"})
 	respJson := struct {
 		Errno int64 `json:"errno"`
 		Data  struct {
@@ -65,11 +68,11 @@ func (d *BaiduShare) Init(ctx context.Context) error {
 		} `json:"data"`
 	}{}
 	resp, err := d.client.R().
-		SetFormData(map[string]string{
-			"pwd":      d.Pwd,
-			"root":     "1",
-			"shorturl": d.Surl,
-		}).
+		SetBody(url.Values{
+			"pwd":      {d.Pwd},
+			"root":     {"1"},
+			"shorturl": {d.Surl},
+		}.Encode()).
 		SetResult(&respJson).
 		Post("share/wxlist?channel=weixin&version=2.2.2&clienttype=25&web=1")
 	if err == nil {
@@ -119,15 +122,15 @@ func (d *BaiduShare) List(ctx context.Context, dir model.Obj, args model.ListArg
 			} `json:"data"`
 		}{}
 		resp, e := d.client.R().
-			SetFormData(map[string]string{
-				"dir":      reqDir,
-				"num":      "1000",
-				"order":    "time",
-				"page":     fmt.Sprint(page),
-				"pwd":      d.Pwd,
-				"root":     isRoot,
-				"shorturl": d.Surl,
-			}).
+			SetBody(url.Values{
+				"dir":      {reqDir},
+				"num":      {"1000"},
+				"order":    {"time"},
+				"page":     {fmt.Sprint(page)},
+				"pwd":      {d.Pwd},
+				"root":     {isRoot},
+				"shorturl": {d.Surl},
+			}.Encode()).
 			SetResult(&respJson).
 			Post("share/wxlist?channel=weixin&version=2.2.2&clienttype=25&web=1")
 		err = e
@@ -187,7 +190,7 @@ func (d *BaiduShare) Link(ctx context.Context, file model.Obj, args model.LinkAr
 			"from":       d.info.Uk,
 			"sekey":      d.info.Seckey,
 			"ondup":      "newcopy",
-			"async":      "0",
+			"async":      "1",
 			"channel":    "chunlei",
 			"web":        "1",
 			"app_id":     "250528",
@@ -210,13 +213,44 @@ func (d *BaiduShare) Link(ctx context.Context, file model.Obj, args model.LinkAr
 	if len(transferJson.Extra.List) == 0 {
 		return nil, fmt.Errorf("transfer response missing Extra.List")
 	}
-	// 新建对象，不修改原 file 对象，避免污染 dirCache
-	newObj := &model.Object{
-		ID:   fmt.Sprint(transferJson.Extra.List[0].ToFsID),
-		Path: transferJson.Extra.List[0].To,
+	obj, ok := file.(*model.Object)
+	if !ok {
+		return nil, fmt.Errorf("file is not *model.Object")
 	}
-	defer d.ref.Remove(ctx, newObj) // 转存后删除，避免占用空间
-	return d.ref.Link(ctx, newObj, args)
+	obj.ID = fmt.Sprint(transferJson.Extra.List[0].ToFsID)
+	obj.Path = transferJson.Extra.List[0].To
+	defer d.ref.Remove(ctx, obj) // 转存后删除，避免占用空间
+	return d.ref.Link(ctx, obj, args)
+}
+
+func (d *BaiduShare) MakeDir(ctx context.Context, parentDir model.Obj, dirName string) error {
+	// TODO create folder, optional
+	return errs.NotSupport
+}
+
+func (d *BaiduShare) Move(ctx context.Context, srcObj, dstDir model.Obj) error {
+	// TODO move obj, optional
+	return errs.NotSupport
+}
+
+func (d *BaiduShare) Rename(ctx context.Context, srcObj model.Obj, newName string) error {
+	// TODO rename obj, optional
+	return errs.NotSupport
+}
+
+func (d *BaiduShare) Copy(ctx context.Context, srcObj, dstDir model.Obj) error {
+	// TODO copy obj, optional
+	return errs.NotSupport
+}
+
+func (d *BaiduShare) Remove(ctx context.Context, obj model.Obj) error {
+	// TODO remove obj, optional
+	return errs.NotSupport
+}
+
+func (d *BaiduShare) Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up driver.UpdateProgress) error {
+	// TODO upload file, optional
+	return errs.NotSupport
 }
 
 var _ driver.Driver = (*BaiduShare)(nil)
