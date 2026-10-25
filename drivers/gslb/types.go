@@ -35,6 +35,10 @@ type GslbStorage struct {
 	Balance bool `yaml:"balance"`
 	// 标记该节点为万能节点，条件性提升优先级并参与负载均衡（隐含 balance: true）
 	BalanceUniversal bool `yaml:"balance_universal"`
+	// 标记该节点为区域通用节点，同地区组内提权（隐含 balance: true）
+	BalanceRegional bool `yaml:"balance_regional"`
+	// 严格匹配：Carrier+Country 必须同时满分别(1+2=3)才计分，否则得0分
+	StrictMatch bool `yaml:"strict_match"`
 }
 
 // Validate 校验配置合法性

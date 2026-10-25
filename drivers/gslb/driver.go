@@ -49,8 +49,8 @@ func (d *Gslb) Init(ctx context.Context) error {
 		if err := d.storages[i].Validate(); err != nil {
 			return err
 		}
-		// balance_universal 隐含 balance: true
-		if d.storages[i].BalanceUniversal {
+		// balance_universal / balance_regional 隐含 balance: true
+		if d.storages[i].BalanceUniversal || d.storages[i].BalanceRegional {
 			d.storages[i].Balance = true
 		}
 	}
@@ -152,13 +152,18 @@ func (d *Gslb) Link(ctx context.Context, file model.Obj, args model.LinkArgs) (*
 		}
 		carrierScore := calcCarrierScore(s, ipinfo)
 		countryScore := calcCountryScore(s, ipinfo.CountryCode)
+		total := carrierScore + countryScore
+		// strict_match: Carrier+Country 必须同时满分否则得0分
+		if s.StrictMatch && (carrierScore != 1 || countryScore != 2) {
+			total = 0
+		}
 		scored = append(scored, scoredStorage{
 			storage: s,
-			score:   carrierScore + countryScore,
+			score:   total,
 		})
 	}
 
-	// Boost 阶段：对 balance_universal 节点条件性提升分数
+	// Boost 阶段：对 balance_universal 节点条件性提升分数（全局维度）
 	maxNonUniversalScore := 0
 	for _, ss := range scored {
 		if !ss.storage.BalanceUniversal && ss.score > maxNonUniversalScore {
@@ -173,6 +178,26 @@ func (d *Gslb) Link(ctx context.Context, file model.Obj, args model.LinkArgs) (*
 		countryScore := calcCountryScore(ss.storage, ipinfo.CountryCode)
 		if countryScore > 0 && maxNonUniversalScore <= 2 && maxNonUniversalScore > ss.score {
 			ss.score = maxNonUniversalScore
+		}
+	}
+
+	// Boost 阶段：对 balance_regional 节点条件性提升分数（同地区组内提权）
+	// 参考组：非 universal 且非 regional 的专用节点
+	maxNonUniversalNonRegional := 0
+	for _, ss := range scored {
+		if !ss.storage.BalanceUniversal && !ss.storage.BalanceRegional && ss.score > maxNonUniversalNonRegional {
+			maxNonUniversalNonRegional = ss.score
+		}
+	}
+	for i := range scored {
+		ss := &scored[i]
+		if !ss.storage.BalanceRegional {
+			continue
+		}
+		countryScore := calcCountryScore(ss.storage, ipinfo.CountryCode)
+		// balance_regional 不做完美匹配限制：同地区组内应与专用节点同分竞争
+		if countryScore > 0 && maxNonUniversalNonRegional > ss.score {
+			ss.score = maxNonUniversalNonRegional
 		}
 	}
 
