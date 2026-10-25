@@ -186,11 +186,6 @@ jobs:
             flags: ""
             goflags: "-tags=sqlite_cgo_compat"
             musl_static: "false"
-          - target: "android-*" #android
-            hash: "md5-android"
-            flags: ""
-            goflags: ""
-            musl_static: "false"
 
     name: Beta Release
     runs-on: ubuntu-latest
