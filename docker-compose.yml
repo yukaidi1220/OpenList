@@ -1,8 +1,25 @@
+# OpenList fork deployment example.
+#
+# Both images are built from this account's forks:
+#   - ghcr.io/yukaidi1220/openlist : built by the Beta Release (Docker) workflow
+#   - ghcr.io/yukaidi1220/aria2    : built from the aria2 fork (fully static aria2c)
+#
+# After `docker compose up -d`, configure offline download in the OpenList
+# admin panel ("离线下载 -> aria2"):
+#   RPC 地址:  http://aria2:6800/jsonrpc
+#   RPC 密钥:  the same RPC_SECRET set below
+# The download directory is mounted at the SAME path (/downloads) in both
+# containers on purpose: aria2 reports downloaded files with its own
+# container path, and OpenList can only pick them up when the paths match.
+# In OpenList, add a "本地存储" driver rooted at /downloads (or a subpath)
+# to see the finished downloads and transfer them elsewhere.
+
 services:
   openlist:
     restart: always
     volumes:
       - '/etc/openlist:/opt/openlist/data'
+      - '/etc/openlist/downloads:/downloads'
     ports:
       - '5244:5244'
       - '5245:5245'
@@ -11,4 +28,17 @@ services:
       - UMASK=022
       - TZ=Asia/Shanghai
     container_name: openlist
-    image: 'openlistteam/openlist:latest'
+    image: 'ghcr.io/yukaidi1220/openlist:latest'
+
+  aria2:
+    restart: always
+    image: 'ghcr.io/yukaidi1220/aria2:latest'
+    container_name: aria2
+    environment:
+      - TZ=Asia/Shanghai
+      # 换成自己的随机密钥（例如: openssl rand -hex 16），并填到 OpenList 后台
+      - RPC_SECRET=change-me
+      - DOWNLOAD_DIR=/downloads
+    volumes:
+      - '/etc/openlist/aria2:/config'
+      - '/etc/openlist/downloads:/downloads'
