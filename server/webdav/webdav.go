@@ -23,6 +23,7 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/setting"
 	"github.com/OpenListTeam/OpenList/v4/internal/stream"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/fs"
@@ -91,7 +92,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if status != 0 {
 		w.WriteHeader(status)
 		if status != http.StatusNoContent {
-			w.Write([]byte(StatusText(status)))
+			body := StatusText(status)
+			if err != nil {
+				body += ": " + err.Error()
+			}
+			w.Write([]byte(body))
 		}
 	} else if useBufferedWriter {
 		brw.WriteToResponse(w)
@@ -400,11 +405,12 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 		}
 		return http.StatusMethodNotAllowed, err
 	}
-	if _, err := fs.Get(ctx, reqPath, &fs.GetArgs{}); err != nil {
-		if errs.IsNotFoundError(err) {
+	if _, err := fs.Get(ctx, reqPath, &fs.GetArgs{NoLog: true}); err != nil {
+		if errs.IsObjectNotFound(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusMethodNotAllowed, err
+		// Get fail 可能是 List 接口临时异常，不影响实际删除，跳过校验继续走 Remove
+		log.Debugf("[webdav] pre-delete stat failed (%v), proceeding with remove anyway: %s", err, reqPath)
 	}
 	parentMeta, err := op.GetNearestMeta(parentPath)
 	if err != nil && !errors.Is(errors.Cause(err), errs.MetaNotFound) {
@@ -519,6 +525,7 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 	}
 	w.Header().Del("Etag")
 	fsStream := &stream.FileStream{
+		Ctx:      ctx,
 		Obj:      &obj,
 		Reader:   r.Body,
 		Mimetype: r.Header.Get("Content-Type"),
@@ -530,12 +537,10 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 	if errs.IsNotFoundError(err) {
 		return http.StatusNotFound, err
 	}
-
-	// TODO(rost): Returning 405 Method Not Allowed might not be appropriate.
 	if err != nil {
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
-	fi, err = fs.Get(ctx, reqPath, &fs.GetArgs{})
+	fi, err = waitPutVisible(ctx, reqPath)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -550,6 +555,32 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 		w.WriteHeader(http.StatusCreated)
 	}
 	return 0, nil
+}
+
+func waitPutVisible(ctx context.Context, reqPath string) (model.Obj, error) {
+	fi, err := fs.Get(ctx, reqPath, &fs.GetArgs{})
+	if err == nil || !errs.IsObjectNotFound(err) {
+		return fi, err
+	}
+
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			fi, err = fs.Get(ctx, reqPath, &fs.GetArgs{})
+			if err == nil || !errs.IsObjectNotFound(err) {
+				return fi, err
+			}
+		case <-timer.C:
+			return nil, err
+		}
+	}
 }
 
 func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status int, err error) {
@@ -607,7 +638,7 @@ func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status in
 		if os.IsNotExist(err) {
 			return http.StatusConflict, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	return http.StatusCreated, nil
 }
@@ -965,7 +996,7 @@ func (h *Handler) handleProppatch(w http.ResponseWriter, r *http.Request) (statu
 		if errs.IsObjectNotFound(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return http.StatusInternalServerError, err
 	}
 	patches, status, err := readProppatch(r.Body)
 	if err != nil {
