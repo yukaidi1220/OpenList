@@ -48,8 +48,17 @@ EOF
     fi
   fi
 
-  # 任一服务启用过才启动 runsvdir
-  if [ -d /opt/service/start ] && [ "$(ls /opt/service/start 2>/dev/null | wc -l)" -gt 0 ]; then
+  # rclone rcd：直接后台拉起（不走 runsv）。
+  # 实测 runsv 会把 rcd 拖进 finish/restart 循环（finish 每 2s 触发、端口 TIME_WAIT
+  # 抢占 → bind address already in use），直接后台起最稳。保留 runsv 目录供
+  # RUN_RCLONE_USE_RUNSV=true 的替代路径。
+  if [ "$RUN_RCLONE" = "true" ] && [ -x /opt/service/stop/rclone/run ]; then
+    /opt/service/stop/rclone/run &
+    echo "rcd 已后台启动（pid $!）"
+  fi
+
+  # aria2 仍走 runsv（上游行为不变）
+  if [ -d /opt/service/start/aria2 ]; then
     runsvdir /opt/service/start &
   fi
   exec ./openlist server --no-prefix
