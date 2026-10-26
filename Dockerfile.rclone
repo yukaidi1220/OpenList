@@ -26,6 +26,8 @@ ARG BASE_IMAGE_TAG=base
 FROM alpine:edge AS go-builder
 LABEL stage=go-builder
 RUN apk add --no-cache bash curl jq gcc git go musl-dev
+# 国内服务器构建：goproxy 直连可用的模块代理（海外构建无感，多一个 fallback 直连）
+ENV GOPROXY=https://goproxy.cn,direct
 WORKDIR /app/
 COPY go.mod go.sum ./
 RUN go mod download
