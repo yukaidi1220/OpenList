@@ -192,13 +192,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eo pipefail
-          KEEP=10
+          KEEP=30
           for image in openlist alist; do
             echo "pruning $image to the newest $KEEP versions"
             # --slurp cannot be combined with --jq; pipe through jq instead,
             # and pipefail makes a failed listing fail the step visibly.
             gh api --paginate --slurp "/user/packages/container/$image/versions" \
-              | jq -r "flatten | sort_by(.created_at) | reverse | .[$KEEP:] | .[].id" \
+              | jq -r "flatten | sort_by(.created_at) | reverse | .[$KEEP:] | map(select((.metadata.container.tags // []) | length == 0)) | .[].id" \
               | while read -r id; do
                   echo "deleting $image version $id"
                   gh api -X DELETE "/user/packages/container/$image/versions/$id" \
