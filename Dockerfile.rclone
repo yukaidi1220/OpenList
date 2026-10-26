@@ -81,12 +81,12 @@ RUN printf '[cloudreve]\ntype = cloudreve\nurl =\n' > /config/rclone/rclone.conf
 USER ${USER}
 RUN /entrypoint.sh version && /opt/rclone/rclone version | head -n 1
 
+# 注意：RCLONE_RC_ADDR/USER/PASS 绝不能放进下面的 ENV——rclone 原生读这些
+# 环境变量，会与 entrypoint 显式参数冲突（部署实测 address already in use）。
 # aria2 环境变量原样保留（RUN_ARIA2=false 时 entrypoint 不会启用它）
 ENV UMASK=022 \
     RUN_ARIA2=false \
-    RUN_RCLONE=true \
-    # RCLONE_RC_ADDR/USER/PASS 绝不能放这里——rclone 原生读这些环境
-    # 变量并与 entrypoint 显式参数冲突（部署实测 address already in use）
+    RUN_RCLONE=true
 
 VOLUME /opt/openlist/data/
 EXPOSE 5244 5245
