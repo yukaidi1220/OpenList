@@ -28,6 +28,19 @@ chmod 600 /opt/openlist-rclone/rclone-config/rclone.conf
 > `addition` 列 JSON 里有 `refresh_token`/`access_token`。qzy-hk/qzy-cn/qzy-hk-mupan
 > 三块都是 Cloudreve V4。
 
+## 1.5 rclone 来源（重要）
+
+镜像里的 rclone **必须是你 fork 的构建**（`yukaidi1220/rclone`，v1.76.0-cdn.23+）——
+官方 rclone 没有 cloudreve 后端，也没有 `backend downloadurl` 取链命令。
+
+Dockerfile 默认参数：
+```
+ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
+```
+换版本：`docker build --build-arg RCLONE_DOWNLOAD_URL=<新地址> -f Dockerfile.rclone -t openlist-rclone .`
+
+构建时会打印 `rclone version`，构建失败即报错。
+
 ## 2. 构建镜像（或用 CI 产物）
 
 ```bash
@@ -58,7 +71,7 @@ services:
       - RUN_ARIA2=false
       - RUN_RCLONE=true
       # rcd 认证（与第 5 步挂载时填的一致；请改掉默认值）
-      - RCLONE_RC_ADDR=127.0.0.1:5572
+      - RCLONE_RC_PORT=5572
       - RCLONE_RC_USER=openlist
       - RCLONE_RC_PASS=改成你自己的密码
     # ===== 内存限制 400m（cgroup 层，镜像层做不到）=====
@@ -102,6 +115,23 @@ curl -s http://127.0.0.1:5244/ping
 ```bash
 docker stats openlist-rclone --no-stream --format "{{.MemUsage}} ({{.MemPerc}})"
 ```
+
+## 4.5 连接拓扑（OpenList ↔ rclone）
+
+```
+┌────────────── 容器 openlist-rclone ──────────────┐
+│  OpenList (PID 1)           rclone rcd (守护)    │
+│  监听 :5244                 监听 0.0.0.0:5572    │
+│      │                          ↑                │
+│      └──── rc HTTP API ─────────┘                │
+│         endpoint=http://127.0.0.1:5572           │
+└──────────────────────────────────────────────────┘
+        ↓ 只有 5244 映射到宿主 127.0.0.1
+```
+- rcd **只监听容器内**，不对宿主暴露 5572（凭据面最小）
+- OpenList 驱动填 `endpoint=http://127.0.0.1:5572` + `rc_user`/`rc_password`
+- rcd 由 entrypoint 守护（单实例锁 + 崩溃 3 秒重试），日志在容器内 `/var/log/rcd.log`
+- 查看：`docker exec openlist-rclone tail -f /var/log/rcd.log`
 
 ## 5. 面板挂载 Rclone 存储
 
@@ -148,4 +178,6 @@ VALUES ('/cr/qzy-hk', 'Rclone',
 | 存储报 rc 连接失败 | `docker exec openlist-rclone ps aux`——rcd 没起来看 `docker logs` 里 runsv 段；认证与环境变量是否一致 |
 | 取链失败 command not found | rcd 用的二进制不是 fork 版（`docker exec openlist-rclone /opt/rclone/rclone version` 应为 v1.76.0-cdn.23+） |
 | 容器反复重启 | `dmesg | grep oom`——400m 被 xfer 缓冲顶爆，按第 3 步说明调并发或放宽 |
+| rcd 没起来 | `docker exec openlist-rclone cat /var/log/rcd.log`；常见是 rclone.conf 路径/凭据错 |
+| 端口冲突 | rcd 绑 `0.0.0.0:5572`（容器内），与宿主无冲突；若容器内 5572 被占改 `RCLONE_RC_PORT` |
 | 列目录 404/500 | root_folder_path 与 remote 实际布局不匹配（qzy-hk 网盘根下是 File/ 和 mupan/） |
