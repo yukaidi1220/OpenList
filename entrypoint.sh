@@ -40,23 +40,25 @@ EOF
   # （CI 实测 address already in use）。rcd 统一由下面直接后台启动。
   rm -rf /opt/service/start/rclone 2>/dev/null || true
 
-  # rclone rcd 守护：单实例锁 + 简单重试循环。
-  # 历史教训（全部 CI 实测）：runsv→端口抢占；普通&→僵尸；setsid&→双实例抢端口。
-  # 方案：用 mkdir 原子锁保证只有一个守护进程，守护自己 while 重启 rcd。
+  # rclone rcd 守护循环。
+  # 历史教训（CI+部署实测）：runsv→端口抢占；普通&→exec 后僵尸；setsid→双实例。
+  # 注意：不要加文件锁——容器 restart 后 /tmp 会保留旧锁，导致重启后守护被跳过
+  # （部署实测主因：stop/start 后 rcd 永远起不来）。entrypoint 每次启动只跑一次。
   if [ "$RUN_RCLONE" = "true" ] && [ -x /opt/rclone/rclone ]; then
     mkdir -p /var/log
-    if mkdir /tmp/.rcd-guard 2>/dev/null; then
-      (
-        while true; do
-          /opt/rclone/rclone rcd             --config /config/rclone/rclone.conf             --rc-addr "0.0.0.0:${RCLONE_RC_PORT:-5572}"             --rc-user "$RCLONE_RC_USER"             --rc-pass "$RCLONE_RC_PASS"             --log-level INFO >> /var/log/rcd.log 2>&1
-          echo "[$(date)] rcd exited code=$?, restart in 3s" >> /var/log/rcd.log
-          sleep 3
-        done
-      ) &
-      echo "rcd 守护已启动（addr=0.0.0.0:${RCLONE_RC_PORT:-5572}）"
-    else
-      echo "rcd 守护已存在（锁目录被占），跳过"
-    fi
+    (
+      while true; do
+        /opt/rclone/rclone rcd \
+          --config /config/rclone/rclone.conf \
+          --rc-addr "0.0.0.0:${RCLONE_RC_PORT:-5572}" \
+          --rc-user "$RCLONE_RC_USER" \
+          --rc-pass "$RCLONE_RC_PASS" \
+          --log-level INFO >> /var/log/rcd.log 2>&1
+        echo "[$(date)] rcd exited code=$?, restart in 3s" >> /var/log/rcd.log
+        sleep 3
+      done
+    ) &
+    echo "rcd 守护已启动（port=${RCLONE_RC_PORT:-5572}）"
   fi
 
   # aria2 仍走 runsv（上游行为不变）
