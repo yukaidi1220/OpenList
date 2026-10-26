@@ -30,7 +30,10 @@ WORKDIR /app/
 COPY go.mod go.sum ./
 RUN go mod download
 COPY ./ ./
-RUN bash build.sh release docker
+# build.sh release 依赖 git tag（git describe / git tag -d beta）：镜像构建环境通常
+# 无 tag（浅克隆），用 dev 变体（version=dev、前端 rolling）——这是 Docker 构建的
+# 常规路径，不影响功能。CI 实测 release 变体报 'tag beta not found' + 404。
+RUN bash build.sh dev docker
 
 FROM alpine:edge AS rclone-fetcher
 # ARG 必须在 FROM 之后重新声明才在本阶段可见（Docker 作用域规则；漏了会得到空 URL，
