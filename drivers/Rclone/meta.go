@@ -17,7 +17,7 @@ type Addition struct {
 	// 取链回退：官方 rc 没有 downloadurl 端点（backend/command 只分发后端自己的
 	// Command 方法）。fork 已把 downloadurl 加进 Command 分发时走主路径；否则用
 	// 本地 rclone 子进程执行 backend downloadurl 兜底。
-	LinkViaExec bool   `json:"link_via_exec" required:"false" type:"bool" default:"false" help:"rcd 取链失败时用本地 rclone 子进程兜底（需带 downloadurl 分发的 fork 构建，yukaidi1220/rclone v1.76.0-cdn.23+）"`
+	LinkViaExec bool   `json:"link_via_exec" required:"false" type:"bool" default:"false" help:"rcd 取链失败时用本地 rclone 子进程兜底（需带 downloadurl 分发的 fork 构建，yukaidi1220/rclone v1.76.0-cdn.23+（正式版已实测 downloadurl 可用））"`
 	RcloneBin   string `json:"rclone_bin" required:"false" type:"text" help:"rclone 可执行文件路径（link_via_exec 时必填）"`
 	RcloneConf  string `json:"rclone_conf" required:"false" type:"text" help:"rclone 配置文件路径（link_via_exec 时必填，须与 rcd 使用的配置一致）"`
 	// 根目录下 0 字节文件通常是云盘的占位/目录映射产物，列出会刷屏

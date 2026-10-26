@@ -1,70 +1,84 @@
 # Rclone 集成镜像：OpenList + rclone rcd 同容器（照 aria2 集成镜像的搞法）。
-# 构建自本仓库（含 drivers/Rclone 驱动），rcd 应使用 yukaidi1220/rclone 的 fork
-# 构建（backend downloadurl 才存在），默认参数已指向该 fork 的最新 release。
 #
-# 构建示例：
+# 重要：base 镜像（openlistteam/openlist-base-image）只含运行时依赖和 runsv，
+# 不含 openlist 二进制/entrypoint/openlist 用户——那些是 Dockerfile/Dockerfile.ci
+# 叠加上去的（审查发现）。所以本文件必须自己构建 openlist 并 COPY，缺了就是死容器。
+#
+# 构建示例（在仓库根目录）：
 #   docker build -f Dockerfile.rclone -t openlist-rclone .
 #
-# 运行示例（宿主机 127.0.0.1 双端口；内存限制在编排层做，见 docker-compose 片段）：
+# 运行示例（宿主机 127.0.0.1 端口；内存限制在编排层，见 docker-compose.rclone.yml）：
 #   docker run -d \
 #     -p 127.0.0.1:5244:5244 \
 #     -e RUN_RCLONE=true \
-#     -e RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64 \
 #     -v /宿主路径/openlist-data:/opt/openlist/data \
 #     -v /宿主路径/rclone:/config/rclone \
-#     --memory 3g openlist-rclone
+#     --memory 400m openlist-rclone
 #
 # OpenList 挂载 Rclone 存储时的配置：
 #   endpoint = http://127.0.0.1:5572 （容器内回环，rcd 不对宿主暴露端口）
 #   rc_user / rc_password = 与 RCLONE_RC_USER / RCLONE_RC_PASS 一致
 #
-# 内存限制说明：镜像层面无法限制内存（那是 cgroup 职责），用 --memory 或
-# compose 的 mem_limit。参考值：openlist+rcd 合计 3g（rcd 占大头的是传输缓存）。
-# 若要分别限制，需拆成两个容器（shared network），见 README。
+# 内存限制说明：镜像层面无法限制内存（cgroup/编排层职责）。若要 openlist 与
+# rcd 分别限制，需拆双容器共享 network。
 
 ARG BASE_IMAGE_TAG=base
-FROM openlistteam/openlist-base-image:${BASE_IMAGE_TAG}
+FROM alpine:edge AS go-builder
+LABEL stage=go-builder
+RUN apk add --no-cache bash curl jq gcc git go musl-dev
+WORKDIR /app/
+COPY go.mod go.sum ./
+RUN go mod download
+COPY ./ ./
+RUN bash build.sh release docker
 
-ARG INSTALL_RCLONE=true
 ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
+FROM alpine:edge AS rclone-fetcher
+RUN apk add --no-cache curl ca-certificates tar unzip
+# fork release 的 linux 资产是裸二进制（无扩展名）；也兼容 zip/tar 形态
+RUN curl -sSL --retry 3 --fail -o /tmp/dl "$RCLONE_DOWNLOAD_URL" \
+ && case "$RCLONE_DOWNLOAD_URL" in \
+      *.zip)      unzip -o /tmp/dl -d /tmp/rl ;; \
+      *.tar.gz|*.tgz)  tar -xzf /tmp/dl -C /tmp/rl ;; \
+      *.tar.bz2)  tar -xjf /tmp/dl -C /tmp/rl ;; \
+      *)          mkdir -p /tmp/rl && cp /tmp/dl /tmp/rl/rclone ;; \
+    esac \
+ && find /tmp/rl -name rclone -type f -exec mv {} /tmp/rclone \; \
+ && chmod +x /tmp/rclone && /tmp/rclone version | head -n 1
+
+FROM ghcr.io/openlistteam/openlist-base-image:${BASE_IMAGE_TAG}
+LABEL MAINTAINER="OpenList"
 ARG USER=openlist
 ARG UID=1001
 ARG GID=1001
 
-USER root
+WORKDIR /opt/openlist/
 
-# rclone 二进制 + 配置目录；配置文件由用户 volume 挂载提供（/config/rclone/rclone.conf），
-# 镜像内只放一个骨架，避免把凭据烧进镜像
-RUN set -e; \
-    if [ "$INSTALL_RCLONE" = "true" ]; then \
-      mkdir -p /opt/rclone /config/rclone /opt/service/stop/rclone; \
-      curl -sSL --retry 3 -o /tmp/rclone.zip "$RCLONE_DOWNLOAD_URL"; \
-      case "$RCLONE_DOWNLOAD_URL" in \
-        *.zip) unzip -o /tmp/rclone.zip -d /tmp/rclone-extract && \
-               find /tmp/rclone-extract -name 'rclone*' -type f -exec mv {} /opt/rclone/rclone \; ;; \
-        *) curl -sSL --retry 3 -o /opt/rclone/rclone "$RCLONE_DOWNLOAD_URL" ;; \
-      esac; \
-      chmod +x /opt/rclone/rclone; \
-      /opt/rclone/rclone version | head -n 1; \
-      printf '[cloudreve]\n\
-type = cloudreve\n\
-url =\n\
-# 其余凭据项由用户在挂载的 rclone.conf 里填写\n' > /config/rclone/rclone.conf; \
-      chown -R ${UID}:${GID} /config/rclone; \
-    fi
+RUN addgroup -g ${GID} ${USER} && \
+    adduser -D -u ${UID} -G ${USER} && \
+    mkdir -p /opt/openlist/data /config/rclone /opt/rclone
 
-# runsv 服务脚本：entrypoint 检测 RUN_RCLONE=true 时会把它拷进 /opt/service/start
-# （与 aria2 完全同构）。rcd 只监听容器内回环，OpenList 经 127.0.0.1:5572 访问；
-# 不对宿主暴露 5572，避免凭据面外扩。宿主需要访问 OpenList API 时只映射 5244。
+COPY --from=go-builder --chmod=755 --chown=${UID}:${GID} /app/bin/openlist ./
+COPY --chmod=755 --chown=${UID}:${GID} entrypoint.sh /entrypoint.sh
+COPY --from=rclone-fetcher --chmod=755 --chown=${UID}:${GID} /tmp/rclone /opt/rclone/rclone
 COPY --chmod=755 docker/rclone/run.rclone /opt/service/stop/rclone/run
 COPY --chmod=755 docker/rclone/finish.rclone /opt/service/stop/rclone/finish
 
-# entrypoint 是上游文件（本仓库已带 RUN_RCLONE 分支）；aria2 环境变量原样保留
-ENV RUN_ARIA2=false \
-    RUN_RCLONE=${INSTALL_RCLONE} \
+# 骨架 rclone.conf：凭据不进镜像，运行时用 volume 覆盖（/config/rclone）
+RUN printf '[cloudreve]\ntype = cloudreve\nurl =\n' > /config/rclone/rclone.conf \
+ && chown -R ${UID}:${GID} /config/rclone
+
+USER ${USER}
+RUN /entrypoint.sh version && /opt/rclone/rclone version | head -n 1
+
+# aria2 环境变量原样保留（RUN_ARIA2=false 时 entrypoint 不会启用它）
+ENV UMASK=022 \
+    RUN_ARIA2=false \
+    RUN_RCLONE=true \
     RCLONE_RC_ADDR=127.0.0.1:5572 \
     RCLONE_RC_USER=probe \
     RCLONE_RC_PASS=probe123
 
-USER ${USER}
+VOLUME /opt/openlist/data/
 EXPOSE 5244 5245
+CMD [ "/entrypoint.sh" ]
