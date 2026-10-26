@@ -124,14 +124,15 @@ func (d *Rclone) List(ctx context.Context, dir model.Obj, args model.ListArgs) (
 
 func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) (*model.Link, error) {
 	rpath := d.toRclonePath(file.GetPath())
-	// 主路径：fork 给 backend/command 加了 publiclink 分发。
-	// 调用形状：根 remote + arg 携带 remote 内全路径（backend/command 的 handler
-	// 只读 fs/command/opt/arg，没有 path 参数；带目录根的 fs 会让 uriFor 解析错位）
+	// 主路径：fork 给 backend/command 加了 downloadurl 分发——返回后端读取文件时
+	// 用的正常下载链接（POST /file/url、走 download_host 重写、带服务端时效、
+	// 不产生分享副作用）。调用形状：根 remote + arg 携带 remote 内全路径
+	// （backend/command 的 handler 只读 fs/command/opt/arg，没有 path 参数）
 	var out struct {
 		Result string `json:"result"`
 	}
 	err := d.client.call(ctx, "backend/command", map[string]any{
-		"command": "publiclink",
+		"command": "downloadurl",
 		"fs":      d.fsName(),
 		"arg":     []string{rpath},
 	}, &out)
@@ -139,9 +140,9 @@ func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) 
 		return &model.Link{URL: out.Result}, nil
 	}
 	if err == nil {
-		err = errors.New("rcd publiclink 返回了空结果")
+		err = errors.New("rcd downloadurl 返回了空结果")
 	}
-	// 回退：本地 rclone 子进程执行 link
+	// 回退：本地 rclone 子进程走同一个 backend 命令（CLI 形状）
 	if !d.LinkViaExec {
 		return nil, fmt.Errorf("rcd 取链失败（未启用 link_via_exec 回退）: %w", err)
 	}
@@ -153,16 +154,20 @@ func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) 
 	return &model.Link{URL: u}, nil
 }
 
-// linkViaExec 通过本地 rclone 子进程执行 link 命令（PublicLinker 接口在 CLI 侧始终可用）
+// linkViaExec 通过本地 rclone 子进程执行 backend downloadurl（与 rc 主路径同一
+// 逻辑，都需要带 downloadurl 分发的 fork 构建）
 func (d *Rclone) linkViaExec(ctx context.Context, rpath string) (string, error) {
 	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(execCtx, d.RcloneBin, "--config", d.RcloneConf, "link", d.fsName()+rpath)
+	dir, name := stdpath.Split(rpath)
+	dir = strings.TrimSuffix(dir, "/")
+	cmd := exec.CommandContext(execCtx, d.RcloneBin, "--config", d.RcloneConf,
+		"backend", "downloadurl", d.fsName()+dir, name)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("rclone link 执行失败: %w（stderr: %s）", err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("rclone backend downloadurl 执行失败: %w（stderr: %s）", err, strings.TrimSpace(stderr.String()))
 	}
 	// NOTICE 行可能混在输出里，取第一个 http(s) 开头的行
 	for _, line := range strings.Split(stdout.String(), "\n") {
@@ -171,7 +176,7 @@ func (d *Rclone) linkViaExec(ctx context.Context, rpath string) (string, error) 
 			return line, nil
 		}
 	}
-	return "", fmt.Errorf("rclone link 输出不是链接: %q", strings.TrimSpace(stdout.String()))
+	return "", fmt.Errorf("rclone backend downloadurl 输出不是链接: %q", strings.TrimSpace(stdout.String()))
 }
 
 var _ driver.Driver = (*Rclone)(nil)
