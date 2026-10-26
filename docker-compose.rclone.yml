@@ -1,5 +1,5 @@
 # OpenList + rclone rcd 同容器部署示例（配合 Dockerfile.rclone 构建的镜像）。
-# 内存限制在编排层设置（镜像层面无法限制）：合计 3g，可按宿主调整。
+# 内存限制在编排层设置（镜像层面无法限制）：400m 按用户要求；偏紧时见 deploy-rclone-image.md 第 3 步说明。
 # rcd 只在容器内回环监听，不对宿主暴露；宿主只见 OpenList 的 5244。
 services:
   openlist-rclone:
@@ -28,8 +28,8 @@ services:
       - RCLONE_RC_PASS=probe123
       # 可选：指定 fork rclone 版本（构建期 ARG，改了要重建镜像）
       # - RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
-    mem_limit: 3g
-    memswap_limit: 3g
+    mem_limit: 400m
+    memswap_limit: 400m
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:5244/ping']
       interval: 30s

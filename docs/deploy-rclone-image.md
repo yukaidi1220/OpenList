@@ -1,0 +1,151 @@
+# OpenList + rclone rcd 同容器部署指南
+
+一个容器跑两个服务：OpenList（网盘前端）+ rclone rcd（驱动经 rc API 连它挂载任意 remote）。
+镜像基于本仓库 `Dockerfile.rclone`，rclone 为 yukaidi1220 fork 构建（cloudreve 后端 +
+`backend downloadurl` 取链）。
+
+## 前置条件
+
+- Docker（含 compose v2）
+- Cloudreve 的凭据（本指南以 qzy-hk 为例：site、username、password 或 access_token）
+
+## 1. 准备目录与 rclone 配置
+
+```bash
+mkdir -p /opt/openlist-rclone/{openlist-data,rclone-config}
+cat > /opt/openlist-rclone/rclone-config/rclone.conf <<'EOF'
+[cloudreve]
+type = cloudreve
+url = https://pan-qzyun-net.yukaidi.top
+# 二选一：refresh_token（推荐，不会过期）
+refresh_token = <从 OpenList 旧实例 data.db 的 x_storages.addition 里取，或重新授权>
+# 或 username/password
+EOF
+chmod 600 /opt/openlist-rclone/rclone-config/rclone.conf
+```
+
+> 凭据来源：旧 OpenList 实例的 SQLite（`openlist/data/data.db`）表 `x_storages`，
+> `addition` 列 JSON 里有 `refresh_token`/`access_token`。qzy-hk/qzy-cn/qzy-hk-mupan
+> 三块都是 Cloudreve V4。
+
+## 2. 构建镜像（或用 CI 产物）
+
+```bash
+git clone https://github.com/yukaidi1220/OpenList.git && cd OpenList
+git checkout main   # PR #4/#5 已合并
+docker build -f Dockerfile.rclone -t openlist-rclone:latest .
+```
+
+## 3. compose 文件（内存限制 400m）
+
+`docker-compose.yml`：
+
+```yaml
+services:
+  openlist-rclone:
+    image: openlist-rclone:latest
+    restart: always
+    container_name: openlist-rclone
+    ports:
+      # 只绑宿主 127.0.0.1：OpenList 面板（如需外网访问，前面加反代）
+      - '127.0.0.1:5244:5244'
+    volumes:
+      - './openlist-data:/opt/openlist/data'
+      - './rclone-config:/config/rclone'
+    environment:
+      - UMASK=022
+      - TZ=Asia/Shanghai
+      - RUN_ARIA2=false
+      - RUN_RCLONE=true
+      # rcd 认证（与第 5 步挂载时填的一致；请改掉默认值）
+      - RCLONE_RC_ADDR=127.0.0.1:5572
+      - RCLONE_RC_USER=openlist
+      - RCLONE_RC_PASS=改成你自己的密码
+    # ===== 内存限制 400m（cgroup 层，镜像层做不到）=====
+    mem_limit: 400m
+    memswap_limit: 400m      # 禁用 swap 超额，超限即 OOM kill 而非拖慢
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:5244/ping']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+```
+
+> **400m 的现实预期**：OpenList 空载 ~100-150MB，rcd 空载 ~50-80MB，日常合计
+> ~200MB。但 rclone 在大文件上传/下载（几 GB 的 ESD）时传输缓冲会明显增长，
+> 400m 偏紧。如果 OOM 频发（`dmesg | grep -i oom`），优先调 rcd 缓冲：
+> 在 rclone.conf 加 `[client]` 段不可行——rcd 的缓冲受 OpenList 侧并发控制，
+> 实际策略是**减少 OpenList 里 Rclone 存储的并发**（挂载时把 `--transfers`
+> 相关的多线程下载关掉/降低），或放宽到 600m。
+
+## 4. 启动与验证
+
+```bash
+cd /opt/openlist-rclone
+docker compose up -d
+sleep 10
+
+# 两个进程都活着
+docker exec openlist-rclone ps aux | grep -E "openlist server|rclone rcd"
+
+# rcd 认证连通
+docker exec openlist-rclone /opt/rclone/rclone rc \
+  --url http://127.0.0.1:5572 --rc-user openlist --rc-pass 改成你自己的密码 \
+  operations/about fs=cloudreve:
+
+# OpenList 面板
+curl -s http://127.0.0.1:5244/ping
+```
+
+内存验证：
+
+```bash
+docker stats openlist-rclone --no-stream --format "{{.MemUsage}} ({{.MemPerc}})"
+```
+
+## 5. 面板挂载 Rclone 存储
+
+打开 `http://127.0.0.1:5244/@manage`（首次进面板的 admin 密码在
+`docker logs openlist-rclone 2>&1 | grep -i password`），添加存储：
+
+| 配置项 | 值 |
+|---|---|
+| 驱动 | Rclone |
+| 挂载路径 | `/cr/qzy-hk`（同名挂载可复刻旧布局；root_folder_path 对应网盘内目录） |
+| endpoint | `http://127.0.0.1:5572` |
+| rc_user / rc_password | 同第 3 步环境变量 |
+| remote_name | `cloudreve` |
+| root_folder_path | `File`（制品）；另建一块填 `mupan`（母盘） |
+| link_via_exec | 关（rcd 是 fork 构建时走 rc 主路径即可） |
+| hide_zero_size | 按需 |
+
+需要复刻旧实例的 `/cr/qzy-hk`、`/cr/qzy-cn`、`/cr/qzy-hk-mupan` 三个挂载：
+同一 rclone.conf 里加 `[cloudreve-cn]`（qzy-cn 凭据）段，remote_name 分别填
+`cloudreve` / `cloudreve-cn`，root_folder_path 均为 `File`；qzy-hk-mupan 的
+root_folder_path 填 `mupan`。
+
+## 6. 数据迁移（可选，从旧实例）
+
+旧实例的挂载配置、用户、索引在旧 `openlist/data/data.db`。最省事的迁移：
+停旧实例 → 把整个 `openlist/data/` 拷进新卷 → 但要把 Rclone 存储补进
+`x_storages`（旧库没有这个驱动）——SQL 示例：
+
+```sql
+INSERT INTO x_storages (mount_path, driver, addition, modified, disabled, ... )
+VALUES ('/cr/qzy-hk', 'Rclone',
+  '{"endpoint":"http://127.0.0.1:5572","rc_user":"openlist","rc_password":"...",
+    "remote_name":"cloudreve","root_folder_path":"File","link_via_exec":false,
+    "hide_zero_size":true}', ...);
+```
+
+更推荐直接在新面板手动加三块存储（第 5 步），旧数据只迁用户和设置。
+
+## 7. 故障排查
+
+| 症状 | 检查 |
+|---|---|
+| 面板 502/ping 不通 | `docker logs openlist-rclone` 看 openlist 是否被 OOM kill（400m 偏紧时） |
+| 存储报 rc 连接失败 | `docker exec openlist-rclone ps aux`——rcd 没起来看 `docker logs` 里 runsv 段；认证与环境变量是否一致 |
+| 取链失败 command not found | rcd 用的二进制不是 fork 版（`docker exec openlist-rclone /opt/rclone/rclone version` 应为 v1.76.0-cdn.23+） |
+| 容器反复重启 | `dmesg | grep oom`——400m 被 xfer 缓冲顶爆，按第 3 步说明调并发或放宽 |
+| 列目录 404/500 | root_folder_path 与 remote 实际布局不匹配（qzy-hk 网盘根下是 File/ 和 mupan/） |
