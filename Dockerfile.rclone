@@ -32,8 +32,10 @@ RUN go mod download
 COPY ./ ./
 RUN bash build.sh release docker
 
-ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
 FROM alpine:edge AS rclone-fetcher
+# ARG 必须在 FROM 之后重新声明才在本阶段可见（Docker 作用域规则；漏了会得到空 URL，
+# curl 报 'blank argument'——CI 实测抓到）
+ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
 RUN apk add --no-cache curl ca-certificates tar unzip
 # fork release 的 linux 资产是裸二进制（无扩展名）；也兼容 zip/tar 形态
 RUN curl -sSL --retry 3 --fail -o /tmp/dl "$RCLONE_DOWNLOAD_URL" \
