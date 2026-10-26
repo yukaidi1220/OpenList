@@ -35,18 +35,10 @@ EOF
     fi
   fi
 
-  # rclone rcd 服务（Rclone 集成镜像，Dockerfile.rclone）：与 aria2 同构
-  RCLONE_DIR="/opt/service/start/rclone"
-  if [ "$RUN_RCLONE" = "true" ] && [ -d /opt/service/stop/rclone ]; then
-    if [ ! -d "$RCLONE_DIR" ]; then
-      mkdir -p "$RCLONE_DIR"
-      cp -r /opt/service/stop/rclone/* "$RCLONE_DIR" 2>/dev/null
-    fi
-  else
-    if [ -d "$RCLONE_DIR" ]; then
-      rm -rf "$RCLONE_DIR"
-    fi
-  fi
+  # rclone 服务目录必须清掉：base 镜像的 runsvdir 会扫描 /opt/service/start，
+  # 若这里放了 rclone 服务，runsvdir 和下文直接执行会同时拉起 rcd → 端口抢占
+  # （CI 实测 address already in use）。rcd 统一由下面直接后台启动。
+  rm -rf /opt/service/start/rclone 2>/dev/null || true
 
   # rclone rcd：直接后台拉起（不走 runsv）。
   # 实测 runsv 会把 rcd 拖进 finish/restart 循环（finish 每 2s 触发、端口 TIME_WAIT
