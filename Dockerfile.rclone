@@ -26,10 +26,10 @@ ARG BASE_IMAGE_TAG=base
 FROM alpine:edge AS go-builder
 LABEL stage=go-builder
 RUN apk add --no-cache bash curl jq gcc git go musl-dev
-# 国内服务器构建：goproxy.cn 兜底；GHCR 构建（海外 runner）用 build-arg
-# GOPROXY_OVERRIDE=https://proxy.golang.org,direct 覆盖（goproxy.cn 大文件 GOAWAY 实测）
-ARG GOPROXY_OVERRIDE
-ENV GOPROXY=${GOPROXY_OVERRIDE:-https://goproxy.cn,direct}
+# go mod download 默认走 proxy.golang.org——本镜像的构建环境（GH runner、海外
+# 服务器）均可直连，无需设置 GOPROXY。目标服务器在国内时不要现场构建，直接
+# pull GHCR 镜像（ghcr.io/yukaidi1220/openlist-rclone）。
+# （goproxy.cn 实测大文件 GOAWAY 断连，弃用）
 WORKDIR /app/
 COPY go.mod go.sum ./
 RUN go mod download
