@@ -40,25 +40,22 @@ EOF
   # （CI 实测 address already in use）。rcd 统一由下面直接后台启动。
   rm -rf /opt/service/start/rclone 2>/dev/null || true
 
-  # rclone rcd：用独立守护循环启动（setsid 脱离会话 + 崩溃自动重启）。
-  # 教训链（全部 CI 实测）：
-  #   - runsv 管理 → finish/restart 循环抢端口
-  #   - 普通 & → exec openlist 后成僵尸
-  #   - setsid & → 启动后 2s 内退出（后台 + 无 tty 环境）
-  # 用外层 while 循环守护，进程真死才重启，日志落 /var/log/rcd.log
+  # rclone rcd 守护：单实例锁 + 简单重试循环。
+  # 历史教训（全部 CI 实测）：runsv→端口抢占；普通&→僵尸；setsid&→双实例抢端口。
+  # 方案：用 mkdir 原子锁保证只有一个守护进程，守护自己 while 重启 rcd。
   if [ "$RUN_RCLONE" = "true" ] && [ -x /opt/rclone/rclone ]; then
-    setsid sh -c '
-      while true; do
-        /opt/rclone/rclone rcd           --config /config/rclone/rclone.conf           --rc-addr "$RCLONE_RC_ADDR"           --rc-user "$RCLONE_RC_USER"           --rc-pass "$RCLONE_RC_PASS"           --log-level INFO
-        echo "[$(date)] rcd exited (code $?), restart in 3s" >> /var/log/rcd.log
-        sleep 3
-      done
-    ' >> /var/log/rcd.log 2>&1 &
-    sleep 3
-    if pgrep -f "rclone rcd" >/dev/null 2>&1; then
+    mkdir -p /var/log
+    if mkdir /tmp/.rcd-guard 2>/dev/null; then
+      (
+        while true; do
+          /opt/rclone/rclone rcd             --config /config/rclone/rclone.conf             --rc-addr "$RCLONE_RC_ADDR"             --rc-user "$RCLONE_RC_USER"             --rc-pass "$RCLONE_RC_PASS"             --log-level INFO >> /var/log/rcd.log 2>&1
+          echo "[$(date)] rcd exited code=$?, restart in 3s" >> /var/log/rcd.log
+          sleep 3
+        done
+      ) &
       echo "rcd 守护已启动（addr=$RCLONE_RC_ADDR）"
     else
-      echo "!! rcd 未起来，日志："; tail -n 8 /var/log/rcd.log
+      echo "rcd 守护已存在（锁目录被占），跳过"
     fi
   fi
 
