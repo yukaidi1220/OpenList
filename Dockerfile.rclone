@@ -85,9 +85,8 @@ RUN /entrypoint.sh version && /opt/rclone/rclone version | head -n 1
 ENV UMASK=022 \
     RUN_ARIA2=false \
     RUN_RCLONE=true \
-    RCLONE_RC_ADDR=127.0.0.1:5572 \
-    RCLONE_RC_USER=probe \
-    RCLONE_RC_PASS=probe123
+    # RCLONE_RC_ADDR/USER/PASS 绝不能放这里——rclone 原生读这些环境
+    # 变量并与 entrypoint 显式参数冲突（部署实测 address already in use）
 
 VOLUME /opt/openlist/data/
 EXPOSE 5244 5245
