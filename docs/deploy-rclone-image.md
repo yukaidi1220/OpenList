@@ -21,8 +21,14 @@ url = https://pan-qzyun-net.yukaidi.top
 refresh_token = <从 OpenList 旧实例 data.db 的 x_storages.addition 里取，或重新授权>
 # 或 username/password
 EOF
+chown -R 1001:1001 /opt/openlist-rclone/rclone-config
 chmod 600 /opt/openlist-rclone/rclone-config/rclone.conf
 ```
+
+> **属主要点（实测坑）**：容器以 openlist(1001) 运行。bind mount 的两个宿主目录
+> **必须 chown 1001:1001**（含 rclone-config 目录本身）——compose 建目录默认 root:root，
+> openlist 无写权限会启动即退出（`./data 无写权限`）；rclone-config 目录不可写会导致
+> cloudreve 后端刷新 token 后无法回写配置（`permission denied` 疯狂刷屏）。
 
 > 凭据来源：旧 OpenList 实例的 SQLite（`openlist/data/data.db`）表 `x_storages`，
 > `addition` 列 JSON 里有 `refresh_token`/`access_token`。qzy-hk/qzy-cn/qzy-hk-mupan
@@ -133,6 +139,18 @@ docker stats openlist-rclone --no-stream --format "{{.MemUsage}} ({{.MemPerc}})"
 - rcd 由 entrypoint 守护（单实例锁 + 崩溃 3 秒重试），日志在容器内 `/var/log/rcd.log`
 - 查看：`docker exec openlist-rclone tail -f /var/log/rcd.log`
 
+## 4.7 初始化 admin（重要，实测坑）
+
+此 OpenList 构建在未初始化时**不会自动创建 admin 用户**（等 Web 安装向导），
+CLI 的 `admin set/random` 只对已存在的用户生效。两种初始化方式：
+
+```bash
+# 方式 A：调 init API（推荐，脚本化）
+curl -s -X POST http://127.0.0.1:5244/api/public/init/setup   -H "Content-Type: application/json"   -d '{"username":"admin","password":"你的密码","site_title":"EEEOS"}'
+
+# 方式 B：设 OPENLIST_ADMIN_PASSWORD 环境变量后重建容器
+```
+
 ## 5. 面板挂载 Rclone 存储
 
 打开 `http://127.0.0.1:5244/@manage`（首次进面板的 admin 密码在
@@ -148,6 +166,10 @@ docker stats openlist-rclone --no-stream --format "{{.MemUsage}} ({{.MemPerc}})"
 | root_folder_path | `File`（制品）；另建一块填 `mupan`（母盘） |
 | link_via_exec | 关（rcd 是 fork 构建时走 rc 主路径即可） |
 | hide_zero_size | 按需 |
+
+> **API/脚本化挂载注意**：`/api/admin/storage/update` 的 payload **必须带
+> `driver` 字段**（否则报 `driver cannot be changed`）；创建时 init 失败的存储
+> 会留在库里，rcd 修好后用 update 触发重新初始化即可，不必删除重建。
 
 需要复刻旧实例的 `/cr/qzy-hk`、`/cr/qzy-cn`、`/cr/qzy-hk-mupan` 三个挂载：
 同一 rclone.conf 里加 `[cloudreve-cn]`（qzy-cn 凭据）段，remote_name 分别填
@@ -181,3 +203,17 @@ VALUES ('/cr/qzy-hk', 'Rclone',
 | rcd 没起来 | `docker exec openlist-rclone cat /var/log/rcd.log`；常见是 rclone.conf 路径/凭据错 |
 | 端口冲突 | rcd 绑 `0.0.0.0:5572`（容器内），与宿主无冲突；若容器内 5572 被占改 `RCLONE_RC_PORT` |
 | 列目录 404/500 | root_folder_path 与 remote 实际布局不匹配（qzy-hk 网盘根下是 File/ 和 mupan/） |
+
+
+## 8. 部署实测坑位汇总（2026-10-26 洛杉矶 Ubuntu 24.04 全流程验证）
+
+| # | 现象 | 根因 | 解法 |
+|---|---|---|---|
+| 1 | 容器启动即退出，`./data 无写权限` | bind mount 宿主目录 root:root，容器内 openlist(1001) 无写权限 | `chown -R 1001:1001` 两个挂载目录（rclone-config 目录本身也要） |
+| 2 | 登录 401，admin 用户不存在 | 未初始化时不自动建 admin（等 Web 向导），CLI admin set/random 只改密码不建号 | 调 `POST /api/public/init/setup` 或设 `OPENLIST_ADMIN_PASSWORD` |
+| 3 | 容器 restart 后 rcd 永远起不来 | entrypoint 的 /tmp 锁跨 restart 残留，守护被误跳过 | 已在镜像内修复（移除锁）；自定义 entrypoint 时勿加跨重启锁 |
+| 4 | cloudreve token 刷新后疯狂报 permission denied | rclone-config 目录不可写，rclone 无法回写配置 | 同 #1，目录 chown 1001 |
+| 5 | storage/update 报 driver cannot be changed | update payload 没带 driver 字段 | update payload 带 `driver` 字段 |
+| 6 | 面板正常但脚本访问 API 返回 HTML | storage/list 是 GET 不是 POST | GET + Authorization 头 |
+
+已验证通过的完整矩阵见 [test-plan-rclone-image.md](test-plan-rclone-image.md)。
