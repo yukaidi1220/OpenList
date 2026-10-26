@@ -58,7 +58,7 @@ WORKDIR /opt/openlist/
 
 # base 镜像可能已自带 openlist 用户/组（CI 实测 addgroup 报 already exists），幂等写法
 RUN (getent group ${USER} >/dev/null 2>&1 || addgroup -g ${GID} ${USER}) && \
-    (getent passwd ${USER} >/dev/null 2>&1 || adduser -D -u ${UID} -G ${USER}) && \
+    (getent passwd ${USER} >/dev/null 2>&1 || adduser -D -G ${USER} ${USER}) && \
     mkdir -p /opt/openlist/data /config/rclone /opt/rclone
 
 COPY --from=go-builder --chmod=755 --chown=${UID}:${GID} /app/bin/openlist ./
