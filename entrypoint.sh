@@ -48,12 +48,12 @@ EOF
     if mkdir /tmp/.rcd-guard 2>/dev/null; then
       (
         while true; do
-          /opt/rclone/rclone rcd             --config /config/rclone/rclone.conf             --rc-addr "$RCLONE_RC_ADDR"             --rc-user "$RCLONE_RC_USER"             --rc-pass "$RCLONE_RC_PASS"             --log-level INFO >> /var/log/rcd.log 2>&1
+          /opt/rclone/rclone rcd             --config /config/rclone/rclone.conf             --rc-addr "0.0.0.0:${RCLONE_RC_PORT:-5572}"             --rc-user "$RCLONE_RC_USER"             --rc-pass "$RCLONE_RC_PASS"             --log-level INFO >> /var/log/rcd.log 2>&1
           echo "[$(date)] rcd exited code=$?, restart in 3s" >> /var/log/rcd.log
           sleep 3
         done
       ) &
-      echo "rcd 守护已启动（addr=$RCLONE_RC_ADDR）"
+      echo "rcd 守护已启动（addr=0.0.0.0:${RCLONE_RC_PORT:-5572}）"
     else
       echo "rcd 守护已存在（锁目录被占），跳过"
     fi
