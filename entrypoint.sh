@@ -40,21 +40,25 @@ EOF
   # （CI 实测 address already in use）。rcd 统一由下面直接后台启动。
   rm -rf /opt/service/start/rclone 2>/dev/null || true
 
-  # rclone rcd：直接后台拉起（不走 runsv）。
-  # 实测 runsv 会把 rcd 拖进 finish/restart 循环（finish 每 2s 触发、端口 TIME_WAIT
-  # 抢占 → bind address already in use），直接后台起最稳。保留 runsv 目录供
-  # RUN_RCLONE_USE_RUNSV=true 的替代路径。
+  # rclone rcd：用独立守护循环启动（setsid 脱离会话 + 崩溃自动重启）。
+  # 教训链（全部 CI 实测）：
+  #   - runsv 管理 → finish/restart 循环抢端口
+  #   - 普通 & → exec openlist 后成僵尸
+  #   - setsid & → 启动后 2s 内退出（后台 + 无 tty 环境）
+  # 用外层 while 循环守护，进程真死才重启，日志落 /var/log/rcd.log
   if [ "$RUN_RCLONE" = "true" ] && [ -x /opt/rclone/rclone ]; then
-    # 不经过 run 脚本：直接起 rclone，参数显式传（避免子 shell/env 继承问题，
-    # CI 实测 run 脚本里的 ${RCLONE_RC_ADDR} 没生效、永远绑 5572）
-    # 必须脱离会话：entrypoint 随后 exec openlist（PID 1），普通 & 子进程会被
-    # SIGTERM 杀掉（CI 实测进程成僵尸、端口 TIME_WAIT 报 already in use）
-    setsid /opt/rclone/rclone rcd       --config /config/rclone/rclone.conf       --rc-addr "${RCLONE_RC_ADDR:-127.0.0.1:5572}"       --rc-user "${RCLONE_RC_USER}"       --rc-pass "${RCLONE_RC_PASS}"       --log-level INFO >/var/log/rcd.log 2>&1 &
-    sleep 2
+    setsid sh -c '
+      while true; do
+        /opt/rclone/rclone rcd           --config /config/rclone/rclone.conf           --rc-addr "$RCLONE_RC_ADDR"           --rc-user "$RCLONE_RC_USER"           --rc-pass "$RCLONE_RC_PASS"           --log-level INFO
+        echo "[$(date)] rcd exited (code $?), restart in 3s" >> /var/log/rcd.log
+        sleep 3
+      done
+    ' >> /var/log/rcd.log 2>&1 &
+    sleep 3
     if pgrep -f "rclone rcd" >/dev/null 2>&1; then
-      echo "rcd 已后台启动（addr=${RCLONE_RC_ADDR:-127.0.0.1:5572}）"
+      echo "rcd 守护已启动（addr=$RCLONE_RC_ADDR）"
     else
-      echo "!! rcd 启动失败，日志："; tail -n 5 /var/log/rcd.log
+      echo "!! rcd 未起来，日志："; tail -n 8 /var/log/rcd.log
     fi
   fi
 
