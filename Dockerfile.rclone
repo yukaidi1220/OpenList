@@ -1,15 +1,14 @@
 # Rclone 集成镜像：OpenList + rclone rcd 同容器（照 aria2 集成镜像的搞法）。
 # 构建自本仓库（含 drivers/Rclone 驱动），rcd 应使用 yukaidi1220/rclone 的 fork
-# 构建（backend downloadurl 才存在），默认参数已指向该 fork 的最新 release。
+# 构建（backend downloadurl 才存在），默认参数已指向该 fork 的 v1.76.0-cdn.23+。
 #
 # 构建示例：
 #   docker build -f Dockerfile.rclone -t openlist-rclone .
 #
-# 运行示例（宿主机 127.0.0.1 双端口；内存限制在编排层做，见 docker-compose 片段）：
+# 运行示例（宿主机 127.0.0.1 端口；内存限制在编排层做，见 docker-compose.rclone.yml）：
 #   docker run -d \
 #     -p 127.0.0.1:5244:5244 \
 #     -e RUN_RCLONE=true \
-#     -e RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64 \
 #     -v /宿主路径/openlist-data:/opt/openlist/data \
 #     -v /宿主路径/rclone:/config/rclone \
 #     --memory 3g openlist-rclone
@@ -18,14 +17,14 @@
 #   endpoint = http://127.0.0.1:5572 （容器内回环，rcd 不对宿主暴露端口）
 #   rc_user / rc_password = 与 RCLONE_RC_USER / RCLONE_RC_PASS 一致
 #
-# 内存限制说明：镜像层面无法限制内存（那是 cgroup 职责），用 --memory 或
-# compose 的 mem_limit。参考值：openlist+rcd 合计 3g（rcd 占大头的是传输缓存）。
-# 若要分别限制，需拆成两个容器（shared network），见 README。
+# 内存限制说明：镜像层面无法限制内存（那是 cgroup/编排层职责），用 --memory 或
+# compose 的 mem_limit。若要 openlist 与 rcd 分别限制，需拆双容器共享 network。
 
 ARG BASE_IMAGE_TAG=base
 FROM openlistteam/openlist-base-image:${BASE_IMAGE_TAG}
 
 ARG INSTALL_RCLONE=true
+# 默认 fork release；tar.bz2（rclone 官方 linux 发行格式，单层目录）
 ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
 ARG USER=openlist
 ARG UID=1001
@@ -33,33 +32,36 @@ ARG GID=1001
 
 USER root
 
-# rclone 二进制 + 配置目录；配置文件由用户 volume 挂载提供（/config/rclone/rclone.conf），
-# 镜像内只放一个骨架，避免把凭据烧进镜像
+# base 镜像是 alpine 系；工具在构建期装进临时层，最终镜像只多一个 rclone 二进制。
+# 不依赖 base 里是否有 curl/unzip：一律 apk 装 curl + tar（alpine 自带 bsdtar 可解 zip）
 RUN set -e; \
     if [ "$INSTALL_RCLONE" = "true" ]; then \
-      mkdir -p /opt/rclone /config/rclone /opt/service/stop/rclone; \
-      curl -sSL --retry 3 -o /tmp/rclone.zip "$RCLONE_DOWNLOAD_URL"; \
+      apk add --no-cache curl ca-certificates >/dev/null; \
+      mkdir -p /opt/rclone /config/rclone /opt/service/stop/rclone /tmp/rl; \
+      curl -sSL --retry 3 --fail -o /tmp/rl/dl "$RCLONE_DOWNLOAD_URL"; \
       case "$RCLONE_DOWNLOAD_URL" in \
-        *.zip) unzip -o /tmp/rclone.zip -d /tmp/rclone-extract && \
-               find /tmp/rclone-extract -name 'rclone*' -type f -exec mv {} /opt/rclone/rclone \; ;; \
-        *) curl -sSL --retry 3 -o /opt/rclone/rclone "$RCLONE_DOWNLOAD_URL" ;; \
+        *.zip)   cp /tmp/rl/dl /tmp/rl/dl.zip; cd /tmp/rl && unzip -o dl.zip ;; \
+        *.tar.gz|*.tgz) tar -xzf /tmp/rl/dl -C /tmp/rl ;; \
+        *.tar.bz2) tar -xjf /tmp/rl/dl -C /tmp/rl ;; \
+        *) cp /tmp/rl/dl /tmp/rl/rclone-bin ;; \
       esac; \
+      mv "$(find /tmp/rl -name rclone -type f | head -n 1)" /opt/rclone/rclone; \
       chmod +x /opt/rclone/rclone; \
       /opt/rclone/rclone version | head -n 1; \
-      printf '[cloudreve]\n\
-type = cloudreve\n\
-url =\n\
-# 其余凭据项由用户在挂载的 rclone.conf 里填写\n' > /config/rclone/rclone.conf; \
+      rm -rf /tmp/rl; \
+      printf '[cloudreve]\ntype = cloudreve\nurl =\n# 其余凭据项由用户挂载的 rclone.conf 填写\n' > /config/rclone/rclone.conf; \
       chown -R ${UID}:${GID} /config/rclone; \
     fi
 
-# runsv 服务脚本：entrypoint 检测 RUN_RCLONE=true 时会把它拷进 /opt/service/start
+# runsv 服务脚本：entrypoint 检测 RUN_RCLONE=true 时把它拷进 /opt/service/start
 # （与 aria2 完全同构）。rcd 只监听容器内回环，OpenList 经 127.0.0.1:5572 访问；
-# 不对宿主暴露 5572，避免凭据面外扩。宿主需要访问 OpenList API 时只映射 5244。
+# 不对宿主暴露 5572，避免凭据面外扩。
 COPY --chmod=755 docker/rclone/run.rclone /opt/service/stop/rclone/run
 COPY --chmod=755 docker/rclone/finish.rclone /opt/service/stop/rclone/finish
 
-# entrypoint 是上游文件（本仓库已带 RUN_RCLONE 分支）；aria2 环境变量原样保留
+# entrypoint 是上游文件（本仓库已带 RUN_RCLONE 分支）；aria2 环境变量原样保留。
+# 注意 ENV 不能引用 ARG 的运行时值，所以 RCLONE_DOWNLOAD_URL 只在构建期生效，
+# 运行期换版本需重建镜像（或进容器手动替换 /opt/rclone/rclone）。
 ENV RUN_ARIA2=false \
     RUN_RCLONE=${INSTALL_RCLONE} \
     RCLONE_RC_ADDR=127.0.0.1:5572 \
