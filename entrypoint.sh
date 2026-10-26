@@ -28,12 +28,29 @@ EOF
       mkdir -p "$ARIA2_DIR"
       cp -r /opt/service/stop/aria2/* "$ARIA2_DIR" 2>/dev/null
     fi
-    runsvdir /opt/service/start &
   else
     # If aria2 should NOT run and target directory exists, remove it
     if [ -d "$ARIA2_DIR" ]; then
       rm -rf "$ARIA2_DIR"
     fi
+  fi
+
+  # rclone rcd 服务（Rclone 集成镜像，Dockerfile.rclone）：与 aria2 同构
+  RCLONE_DIR="/opt/service/start/rclone"
+  if [ "$RUN_RCLONE" = "true" ] && [ -d /opt/service/stop/rclone ]; then
+    if [ ! -d "$RCLONE_DIR" ]; then
+      mkdir -p "$RCLONE_DIR"
+      cp -r /opt/service/stop/rclone/* "$RCLONE_DIR" 2>/dev/null
+    fi
+  else
+    if [ -d "$RCLONE_DIR" ]; then
+      rm -rf "$RCLONE_DIR"
+    fi
+  fi
+
+  # 任一服务启用过才启动 runsvdir
+  if [ -d /opt/service/start ] && [ "$(ls /opt/service/start 2>/dev/null | wc -l)" -gt 0 ]; then
+    runsvdir /opt/service/start &
   fi
   exec ./openlist server --no-prefix
 fi

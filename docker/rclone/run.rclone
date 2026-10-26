@@ -1,0 +1,10 @@
+#!/bin/sh
+# runsv run 脚本：rclone rcd 常驻。
+# 与 aria2 服务同构：exec 前台运行，runit 负责重启。
+# 配置文件优先级：挂载的 /config/rclone/rclone.conf > 镜像骨架。
+exec /opt/rclone/rclone rcd \
+  --config /config/rclone/rclone.conf \
+  --rc-addr "${RCLONE_RC_ADDR:-127.0.0.1:5572}" \
+  --rc-user "${RCLONE_RC_USER:-probe}" \
+  --rc-pass "${RCLONE_RC_PASS:-probe123}" \
+  --log-level INFO

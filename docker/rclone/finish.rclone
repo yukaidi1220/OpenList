@@ -1,0 +1,3 @@
+#!/bin/sh
+# runsv finish 脚本：rcd 异常退出后间隔 2 秒重启，避免疯狂拉起
+sleep 2

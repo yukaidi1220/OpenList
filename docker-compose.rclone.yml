@@ -1,0 +1,37 @@
+# OpenList + rclone rcd 同容器部署示例（配合 Dockerfile.rclone 构建的镜像）。
+# 内存限制在编排层设置（镜像层面无法限制）：合计 3g，可按宿主调整。
+# rcd 只在容器内回环监听，不对宿主暴露；宿主只见 OpenList 的 5244。
+services:
+  openlist-rclone:
+    build:
+      context: .
+      dockerfile: Dockerfile.rclone
+    restart: always
+    container_name: openlist-rclone
+    # 宿主机 127.0.0.1 暴露：只有本机能访问，不对局域网开放
+    ports:
+      - '127.0.0.1:5244:5244'
+      # 5245 是 HTTPS 端口，按需放开
+      # - '127.0.0.1:5245:5245'
+    volumes:
+      - './openlist-data:/opt/openlist/data'
+      # rclone 配置（rclone.conf，含 cloudreve remote 凭据）放宿主，避免烧进镜像
+      - './rclone-config:/config/rclone'
+    environment:
+      - UMASK=022
+      - TZ=Asia/Shanghai
+      - RUN_ARIA2=false
+      - RUN_RCLONE=true
+      # rcd 认证（OpenList 挂载 Rclone 存储时 endpoint/认证填同一套值）
+      - RCLONE_RC_ADDR=127.0.0.1:5572
+      - RCLONE_RC_USER=probe
+      - RCLONE_RC_PASS=probe123
+      # 可选：指定 fork rclone 版本（构建期 ARG，改了要重建镜像）
+      # - RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
+    mem_limit: 3g
+    memswap_limit: 3g
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:5244/ping']
+      interval: 30s
+      timeout: 5s
+      retries: 3
