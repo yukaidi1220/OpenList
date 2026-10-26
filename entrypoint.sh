@@ -44,9 +44,11 @@ EOF
   # 实测 runsv 会把 rcd 拖进 finish/restart 循环（finish 每 2s 触发、端口 TIME_WAIT
   # 抢占 → bind address already in use），直接后台起最稳。保留 runsv 目录供
   # RUN_RCLONE_USE_RUNSV=true 的替代路径。
-  if [ "$RUN_RCLONE" = "true" ] && [ -x /opt/service/stop/rclone/run ]; then
-    /opt/service/stop/rclone/run &
-    echo "rcd 已后台启动（pid $!）"
+  if [ "$RUN_RCLONE" = "true" ] && [ -x /opt/rclone/rclone ]; then
+    # 不经过 run 脚本：直接起 rclone，参数显式传（避免子 shell/env 继承问题，
+    # CI 实测 run 脚本里的 ${RCLONE_RC_ADDR} 没生效、永远绑 5572）
+    /opt/rclone/rclone rcd       --config /config/rclone/rclone.conf       --rc-addr "${RCLONE_RC_ADDR:-127.0.0.1:5572}"       --rc-user "${RCLONE_RC_USER}"       --rc-pass "${RCLONE_RC_PASS}"       --log-level INFO &
+    echo "rcd 已后台启动（pid $!，addr=${RCLONE_RC_ADDR:-127.0.0.1:5572}）"
   fi
 
   # aria2 仍走 runsv（上游行为不变）
