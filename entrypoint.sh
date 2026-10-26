@@ -47,8 +47,15 @@ EOF
   if [ "$RUN_RCLONE" = "true" ] && [ -x /opt/rclone/rclone ]; then
     # 不经过 run 脚本：直接起 rclone，参数显式传（避免子 shell/env 继承问题，
     # CI 实测 run 脚本里的 ${RCLONE_RC_ADDR} 没生效、永远绑 5572）
-    /opt/rclone/rclone rcd       --config /config/rclone/rclone.conf       --rc-addr "${RCLONE_RC_ADDR:-127.0.0.1:5572}"       --rc-user "${RCLONE_RC_USER}"       --rc-pass "${RCLONE_RC_PASS}"       --log-level INFO &
-    echo "rcd 已后台启动（pid $!，addr=${RCLONE_RC_ADDR:-127.0.0.1:5572}）"
+    # 必须脱离会话：entrypoint 随后 exec openlist（PID 1），普通 & 子进程会被
+    # SIGTERM 杀掉（CI 实测进程成僵尸、端口 TIME_WAIT 报 already in use）
+    setsid /opt/rclone/rclone rcd       --config /config/rclone/rclone.conf       --rc-addr "${RCLONE_RC_ADDR:-127.0.0.1:5572}"       --rc-user "${RCLONE_RC_USER}"       --rc-pass "${RCLONE_RC_PASS}"       --log-level INFO >/var/log/rcd.log 2>&1 &
+    sleep 2
+    if pgrep -f "rclone rcd" >/dev/null 2>&1; then
+      echo "rcd 已后台启动（addr=${RCLONE_RC_ADDR:-127.0.0.1:5572}）"
+    else
+      echo "!! rcd 启动失败，日志："; tail -n 5 /var/log/rcd.log
+    fi
   fi
 
   # aria2 仍走 runsv（上游行为不变）
