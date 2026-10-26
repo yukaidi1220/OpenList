@@ -102,6 +102,9 @@ func (d *Rclone) List(ctx context.Context, dir model.Obj, args model.ListArgs) (
 	}
 	res := make([]model.Obj, 0, len(out.List))
 	for _, it := range out.List {
+		if d.HideZeroSize && it.Size == 0 && !it.IsDir {
+			continue
+		}
 		var mod time.Time
 		if it.ModTime != "" {
 			if t, err := time.Parse(time.RFC3339, it.ModTime); err == nil {
