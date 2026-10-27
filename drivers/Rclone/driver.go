@@ -130,6 +130,13 @@ func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) 
 		"remote": rpath,
 	}, &out)
 	if err == nil && out.URL != "" {
+		// 设 Expiration 才会让 OpenList 缓存 302 链接；不设的话 SyncClosers 引用
+		// 计数在 302 响应后立即归零、缓存对象作废，每次请求都会重新取链。
+		// 时长必须短于上游签名有效期（实测 cloudreve/189/139 约 60 分钟）。
+		if d.LinkCacheMinutes > 0 {
+			exp := time.Duration(d.LinkCacheMinutes) * time.Minute
+			return &model.Link{URL: out.URL, Expiration: &exp}, nil
+		}
 		return &model.Link{URL: out.URL}, nil
 	}
 	if err == nil {
