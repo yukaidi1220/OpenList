@@ -1,8 +1,8 @@
 # OpenList + rclone rcd 同容器部署指南
 
 一个容器跑两个服务：OpenList（网盘前端）+ rclone rcd（驱动经 rc API 连它挂载任意 remote）。
-镜像基于本仓库 `Dockerfile.rclone`，rclone 为 yukaidi1220 fork 构建（cloudreve 后端 +
-`backend downloadurl` 取链）。
+镜像基于本仓库 `Dockerfile.rclone`，rclone 为 yukaidi1220 fork 构建（cloudreve / cloud189 /
+wopan / yun139 后端，取链统一走 `operations/publiclink`）。
 
 ## 前置条件
 
@@ -36,12 +36,12 @@ chmod 600 /opt/openlist-rclone/rclone-config/rclone.conf
 
 ## 1.5 rclone 来源（重要）
 
-镜像里的 rclone **必须是你 fork 的构建**（`yukaidi1220/rclone`，v1.76.0-cdn.23+）——
-官方 rclone 没有 cloudreve 后端，也没有 `backend downloadurl` 取链命令。
+镜像里的 rclone **必须是你 fork 的构建**（`yukaidi1220/rclone`，v1.76.0-cdn.29+）——
+官方 rclone 没有 cloudreve / cloud189 的 `Fs.PublicLink` 实现。
 
 Dockerfile 默认参数：
 ```
-ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.23/rclone-cdn-linux-amd64
+ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.29/rclone-cdn-linux-amd64
 ```
 换版本：`docker build --build-arg RCLONE_DOWNLOAD_URL=<新地址> -f Dockerfile.rclone -t openlist-rclone .`
 
@@ -199,7 +199,7 @@ VALUES ('/cr/qzy-hk', 'Rclone',
 |---|---|
 | 面板 502/ping 不通 | `docker logs openlist-rclone` 看 openlist 是否被 OOM kill（400m 偏紧时） |
 | 存储报 rc 连接失败 | `docker exec openlist-rclone ps aux`——rcd 没起来看 `docker logs` 里 runsv 段；认证与环境变量是否一致 |
-| 取链失败 command not found | rcd 用的二进制不是 fork 版（`docker exec openlist-rclone /opt/rclone/rclone version` 应为 v1.76.0-cdn.23+） |
+| 取链失败 command not found | rcd 用的二进制不是 fork 版（`docker exec openlist-rclone /opt/rclone/rclone version` 应为 v1.76.0-cdn.29+） |
 | 容器反复重启 | `dmesg | grep oom`——400m 被 xfer 缓冲顶爆，按第 3 步说明调并发或放宽 |
 | rcd 没起来 | `docker exec openlist-rclone cat /var/log/rcd.log`；常见是 rclone.conf 路径/凭据错 |
 | 端口冲突 | rcd 绑 `0.0.0.0:5572`（容器内），与宿主无冲突；若容器内 5572 被占改 `RCLONE_RC_PORT` |
