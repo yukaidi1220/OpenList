@@ -254,6 +254,10 @@ func Link(ctx context.Context, storage driver.Driver, path string, args model.Li
 			return ol.link, ol.obj, nil
 		}
 	}
+	// 负向缓存：近期取链失败过的文件，直接返回上次的错误，不再打上游
+	if cachedErr, exists := Cache.linkErrCache.GetType(key, typeKey); exists {
+		return nil, nil, cachedErr
+	}
 
 	fn := func() (*objWithLink, error) {
 		file, err := GetUnwrap(ctx, storage, path)
@@ -272,6 +276,7 @@ func Link(ctx context.Context, storage driver.Driver, path string, args model.Li
 		if err != nil {
 			return nil, err
 		}
+		Cache.linkErrCache.DeleteKey(key + "/" + typeKey)
 		if ol.policy.expiration != nil {
 			Cache.linkCache.SetTypeWithTTL(key, typeKey, ol, *ol.policy.expiration)
 		} else {
@@ -282,6 +287,8 @@ func Link(ctx context.Context, storage driver.Driver, path string, args model.Li
 	for {
 		ol, err, _ := linkG.Do(key+"/"+typeKey, fn)
 		if err != nil {
+			// 记入负向缓存（1 分钟），期间同一文件直接失败，避免故障期打爆上游
+			Cache.linkErrCache.SetType(key, typeKey, err)
 			return nil, nil, err
 		}
 		if ol.acquire() {

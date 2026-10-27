@@ -11,9 +11,13 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 )
 
+// linkErrorCacheTTL 取链失败结果的负向缓存时长
+const linkErrorCacheTTL = time.Minute
+
 type CacheManager struct {
 	dirCache     *cache.KeyedCache[*directoryCache]       // Cache for directory listings
 	linkCache    *cache.TypedCache[*objWithLink]          // Cache for file links
+	linkErrCache *cache.TypedCache[error]                 // Negative cache: link minting failures
 	userCache    *cache.KeyedCache[*model.User]           // Cache for user data
 	settingCache *cache.KeyedCache[any]                   // Cache for settings
 	detailCache  *cache.KeyedCache[*model.StorageDetails] // Cache for storage details
@@ -21,8 +25,11 @@ type CacheManager struct {
 
 func NewCacheManager() *CacheManager {
 	return &CacheManager{
-		dirCache:     cache.NewKeyedCache[*directoryCache](time.Minute * 5),
-		linkCache:    cache.NewTypedCache[*objWithLink](time.Minute * 30),
+		dirCache:  cache.NewKeyedCache[*directoryCache](time.Minute * 5),
+		linkCache: cache.NewTypedCache[*objWithLink](time.Minute * 30),
+		// 取链失败（后端报错/限流/超时）的负向缓存：1 分钟内同一文件不重复打上游，
+		// 避免故障期间每个请求都付完整取链开销。成功取链不走这里。
+		linkErrCache: cache.NewTypedCache[error](linkErrorCacheTTL),
 		userCache:    cache.NewKeyedCache[*model.User](time.Hour),
 		settingCache: cache.NewKeyedCache[any](time.Hour),
 		detailCache:  cache.NewKeyedCache[*model.StorageDetails](time.Minute * 30),
@@ -148,6 +155,7 @@ func (cm *CacheManager) InvalidateStorageDetails(storage driver.Driver) {
 func (cm *CacheManager) ClearAll() {
 	cm.dirCache.Clear()
 	cm.linkCache.Clear()
+	cm.linkErrCache.Clear()
 	cm.userCache.Clear()
 	cm.settingCache.Clear()
 	cm.detailCache.Clear()
