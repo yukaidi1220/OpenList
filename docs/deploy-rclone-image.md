@@ -67,7 +67,8 @@ services:
     container_name: openlist-rclone
     ports:
       # 只绑宿主 127.0.0.1：OpenList 面板（如需外网访问，前面加反代）
-      - '127.0.0.1:5244:5244'
+      # 对公网直接开放：改 '5244:5244' 并务必先改掉默认 admin 密码
+      - '5244:5244'
     volumes:
       - './openlist-data:/opt/openlist/data'
       - './rclone-config:/config/rclone'
