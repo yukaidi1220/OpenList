@@ -17,6 +17,8 @@ on:
       - 'docker/rclone/**'
       - 'entrypoint.sh'
       - 'drivers/Rclone/**'
+      # op 层改动（缓存/取链逻辑）也影响镜像内 openlist 二进制
+      - 'internal/op/**'
       - '.github/workflows/build-rclone-image.yml'
 
 permissions:
