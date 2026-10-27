@@ -16,6 +16,9 @@ type Addition struct {
 	RemoteName string `json:"remote_name" required:"true" type:"text" help:"rclone remote 名称（rclone.conf 中的段名），例如 crtest；不能以 - 开头"`
 	// 根目录下 0 字节文件通常是云盘的占位/目录映射产物，列出会刷屏
 	HideZeroSize bool `json:"hide_zero_size" required:"false" type:"bool" default:"false" help:"不列出 0 字节文件"`
+	// 302 直链的本地缓存时长（分钟）。必须小于上游签名有效期（cloudreve/189/139
+	// 实测约 60 分钟），否则会把过期链接发给客户端。0=不缓存（每次请求都向上游取链）
+	LinkCacheMinutes int `json:"link_cache_minutes" required:"false" type:"number" default:"50" help:"302 直链缓存时长（分钟），需小于上游链接有效期；0=不缓存"`
 }
 
 var config = driver.Config{
