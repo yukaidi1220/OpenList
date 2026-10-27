@@ -10,6 +10,7 @@ import (
 
 	"github.com/OpenListTeam/OpenList/v4/internal/driver"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
+	"github.com/OpenListTeam/OpenList/v4/internal/op"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -64,6 +65,13 @@ func (d *Rclone) Init(ctx context.Context) error {
 		"fs": d.fsName(), "remote": d.toRclonePath("/"),
 	}, &out); err != nil {
 		return fmt.Errorf("根目录 list 失败（检查 remote_name 与 root_folder_path）: %w", err)
+	}
+	// 目录缓存默认 5 分钟：cache_expiration 是存储级字段，驱动无法给默认值，
+	// 只在用户没设（0）时补一次并持久化，避免每次启动都改。
+	if d.GetStorage().CacheExpiration == 0 {
+		d.GetStorage().CacheExpiration = defaultDirCacheMinutes
+		op.MustSaveDriverStorage(d)
+		log.Infof("[rclone] 目录缓存未设置，已默认 %d 分钟", defaultDirCacheMinutes)
 	}
 	return nil
 }
@@ -130,14 +138,15 @@ func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) 
 		"remote": rpath,
 	}, &out)
 	if err == nil && out.URL != "" {
-		// 设 Expiration 才会让 OpenList 缓存 302 链接；不设的话 SyncClosers 引用
-		// 计数在 302 响应后立即归零、缓存对象作废，每次请求都会重新取链。
-		// 时长必须短于上游签名有效期（实测 cloudreve/189/139 约 60 分钟）。
+		// 设 Expiration 才会让 OpenList 缓存 302 链接（不设则 302 后 SyncClosers
+		// 引用立即归零、缓存对象作废，每次请求都重新取链）。
+		// 时长按上游链接的剩余有效期推算，规则见 linkttl.go。
 		if d.LinkCacheMinutes > 0 {
 			exp := time.Duration(d.LinkCacheMinutes) * time.Minute
 			return &model.Link{URL: out.URL, Expiration: &exp}, nil
 		}
-		return &model.Link{URL: out.URL}, nil
+		exp := linkTTLFor(out.URL, time.Now())
+		return &model.Link{URL: out.URL, Expiration: &exp}, nil
 	}
 	if err == nil {
 		err = errors.New("rcd publiclink 返回了空 url")
