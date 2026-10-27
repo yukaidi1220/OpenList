@@ -91,3 +91,25 @@ func itoa(n int) string {
 }
 
 func itoa64(n int64) string { return itoa(int(n)) }
+
+// TestLinkTTL189Followed 覆盖 cloud189 跟随 302 后的链接形态：
+// 原始链接是 download.cloud.189.cn?...&expired=<ms>（第一层，有效期约 5 分钟），
+// 跟随一次 302 后变成 xxx.mini189.cn/...?X-Amz-Date=...&X-Amz-Expires=3240（S3v4）。
+// 两种形态 linkTTLFor 都要能正确推算缓存时长。
+func TestLinkTTL189Followed(t *testing.T) {
+	now := time.Date(2026, 10, 27, 5, 0, 0, 0, time.UTC)
+
+	// 302 目标：签名时刻 04:50:25 + 3240s = 05:44:25，距 now 剩余 53m25s（<60min -> 20%）
+	u := "https://xxx.mini189.cn/PERSONCLOUD/x.WIM" +
+		"?x-obs-traffic-limit=409600" +
+		"&X-Amz-Date=20261027T045025Z" +
+		"&X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+		"&X-Amz-Expires=3240" +
+		"&X-Amz-SignedHeaders=host" +
+		"&X-Amz-Signature=abc"
+	remaining := time.Date(2026, 10, 27, 5, 44, 25, 0, time.UTC).Sub(now)
+	want := time.Duration(float64(remaining) * linkTTLShortRatio)
+	if got := linkTTLFor(u, now); got != want {
+		t.Errorf("189 跟随 302 后: got %v, want %v", got, want)
+	}
+}
