@@ -66,6 +66,10 @@ RUN curl -sSL --retry 3 --fail -o /tmp/dl "$RCLONE_DOWNLOAD_URL" \
 
 FROM ghcr.io/openlistteam/openlist-base-image:${BASE_IMAGE_TAG}
 LABEL MAINTAINER="OpenList"
+# 让包自己带着来源仓库：GHCR 据此把 package 关联到仓库，从而继承仓库权限，
+# 仓库里的 workflow 也自动拿到写权限。这条被误删/包被手工解绑后，重建镜像
+# 会重新建立关联，不至于退回 permission_denied: write_package。
+LABEL org.opencontainers.image.source="https://github.com/yukaidi1220/OpenList"
 ARG USER=openlist
 ARG UID=1001
 ARG GID=1001

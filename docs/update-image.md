@@ -77,9 +77,10 @@ docker exec openlist-rclone /opt/rclone/rclone rc \
 
 ```bash
 cd /opt/openlist-rclone
-# 用带版本号的 tag（每次构建都会打 run_number tag）
+# 用带版本的 tag
 docker compose down
 sed -i 's|openlist-rclone:latest|openlist-rclone:<旧run_number>|' docker-compose.yml
 docker compose up -d
 ```
-GHCR 上每次构建保留 `latest` + `run_number` 两个 tag，可精确回滚。
+GHCR 上每次构建留三个 tag：`latest`、`<run_number>`、`sha-<短sha>`。前两个按构建序号，
+好念但看不出对应哪次提交；`sha-` 那个能直接反查源码，事后追根因用它。

@@ -1,7 +1,12 @@
 # OpenList + rclone 集成镜像：构建 → 冒烟 → 推 GHCR。
 #
 # 触发：手动；或 push 到 main 且改动涉及驱动/Dockerfile（自动出图）。
-# 产物：ghcr.io/yukaidi1220/openlist-rclone:{latest,<run_number>}
+# 产物：ghcr.io/yukaidi1220/openlist-rclone:{latest,<run_number>,<短sha>}
+#
+# 包名是 openlist-rclone，与上游 test_docker.yml 产出的 openlist 包分开：两套 tag
+# 互不覆盖，上游那个清理 untagged 版本的 workflow 也不会碰到这里。包关联到
+# yukaidi1220/OpenList 仓库（Dockerfile 里带了 org.opencontainers.image.source），
+# 所以本仓库的 workflow 自动有写权限，不需要手工配 Manage Actions access。
 #
 # rclone 版本由 Dockerfile.rclone 的 RCLONE_DOWNLOAD_URL 决定，默认跟 fork 的
 # releases/latest（每次构建真下载，CI 没有层缓存）。所以升级 rclone 只要 fork 打新 tag
@@ -47,9 +52,13 @@ jobs:
 
       - name: 构建镜像
         run: |
+          # run_number 是 workflow 自己的计数器，看不出对应哪次提交，重建 workflow
+          # 后还会从 1 重来；短 sha 才能反查到源码。两个都留：按 run_number 回滚
+          # 好念，按 sha 追根溯源。
           docker build -f Dockerfile.rclone \
             -t ghcr.io/yukaidi1220/openlist-rclone:latest \
-            -t ghcr.io/yukaidi1220/openlist-rclone:${{ github.run_number }} .
+            -t ghcr.io/yukaidi1220/openlist-rclone:${{ github.run_number }} \
+            -t ghcr.io/yukaidi1220/openlist-rclone:sha-${GITHUB_SHA::7} .
 
       - name: 冒烟（镜像内二进制与用户）
         run: |
@@ -66,7 +75,8 @@ jobs:
       - name: 冒烟（容器内 rcd 活体）
         run: |
           # 上面只验了二进制存在；这里起容器验证 entrypoint 的 rcd 守护真的能拉起
-          docker run -d --name smoke             -e RUN_RCLONE=true -e RUN_RC_PORT=5572             -e RCLONE_RC_USER=smoke -e RCLONE_RC_PASS=smoke             ghcr.io/yukaidi1220/openlist-rclone:latest
+          # entrypoint 读的是 RCLONE_RC_PORT；写错名字它不会报错，只是回落到默认 5572
+          docker run -d --name smoke -e RUN_RCLONE=true -e RCLONE_RC_PORT=5572 -e RCLONE_RC_USER=smoke -e RCLONE_RC_PASS=smoke ghcr.io/yukaidi1220/openlist-rclone:latest
           for i in $(seq 1 20); do
             sleep 2
             if docker exec smoke sh -c 'wget -qO- http://127.0.0.1:5244/ping' 2>/dev/null | grep -q pong; then
@@ -84,3 +94,4 @@ jobs:
         run: |
           docker push ghcr.io/yukaidi1220/openlist-rclone:latest
           docker push ghcr.io/yukaidi1220/openlist-rclone:${{ github.run_number }}
+          docker push ghcr.io/yukaidi1220/openlist-rclone:sha-${GITHUB_SHA::7}
