@@ -44,7 +44,14 @@ RUN bash build.sh dev docker
 FROM alpine:edge AS rclone-fetcher
 # ARG 必须在 FROM 之后重新声明才在本阶段可见（Docker 作用域规则；漏了会得到空 URL，
 # curl 报 'blank argument'——CI 实测抓到）
-ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.29/rclone-cdn-linux-amd64
+#
+# 默认跟 fork 的 releases/latest：重建镜像就会拿到最新构建的 rclone，不用每次手改
+# 版本号。代价是可复现性——latest 是可变指针，同一个 commit 隔几天重建可能装进不同
+# 的 rclone。要钉住某一版就构建时覆盖：
+#   docker build --build-arg RCLONE_DOWNLOAD_URL=<releases/download/vX.Y.Z-cdn.N/...>
+# 构建日志里 rclone version 会打印两次（fetcher 阶段 + final 阶段），装进去的实际版本
+# 以此为准。
+ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/latest/download/rclone-cdn-linux-amd64
 RUN apk add --no-cache curl ca-certificates tar unzip
 # fork release 的 linux 资产是裸二进制（无扩展名）；也兼容 zip/tar 形态
 RUN curl -sSL --retry 3 --fail -o /tmp/dl "$RCLONE_DOWNLOAD_URL" \

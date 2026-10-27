@@ -36,16 +36,29 @@ chmod 600 /opt/openlist-rclone/rclone-config/rclone.conf
 
 ## 1.5 rclone 来源（重要）
 
-镜像里的 rclone **必须是你 fork 的构建**（`yukaidi1220/rclone`，v1.76.0-cdn.29+）——
+镜像里的 rclone **必须是你 fork 的构建**（`yukaidi1220/rclone`）——
 官方 rclone 没有 cloudreve / cloud189 的 `Fs.PublicLink` 实现。
 
-Dockerfile 默认参数：
+Dockerfile 默认参数跟 fork 的 **releases/latest**：
 ```
-ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.29/rclone-cdn-linux-amd64
+ARG RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/latest/download/rclone-cdn-linux-amd64
 ```
-换版本：`docker build --build-arg RCLONE_DOWNLOAD_URL=<新地址> -f Dockerfile.rclone -t openlist-rclone .`
+所以重建镜像就会自动拿到最新发布的 rclone，不用手改版本号。`releases/latest` 只指向
+正式的 `vX.Y.Z-cdn.N` 发布（fork 的 release workflow 会把非正式 tag 发成 prerelease，
+不会顶掉 latest），且 publish 阶段要四份资产齐了才转正，所以不会下到半个发布。
 
-构建时会打印 `rclone version`，构建失败即报错。
+按域名取 latest 的代价是可复现性：同一个 commit 隔几天重建，装进去的 rclone 可能不同。
+要钉住某一版就这样覆盖：
+```
+docker build --build-arg RCLONE_DOWNLOAD_URL=https://github.com/yukaidi1220/rclone/releases/download/v1.76.0-cdn.29/rclone-cdn-linux-amd64 -f Dockerfile.rclone -t openlist-rclone .
+```
+
+构建时会打印 `rclone version` 两次（fetcher 阶段和 final 阶段），**装进去的实际版本以构建日志为准**；
+镜像起来后也可以直接问 `docker exec openlist-rclone /opt/rclone/rclone version`。
+
+> **本地重建的坑**：ARG 值没变的话，Docker 会直接复用下载那一层的缓存，不会重新拉。
+> CI 没有配置层缓存所以每次都真下载；本机要强制取最新得加 `--no-cache`
+> （`--pull` 只管基础镜像，管不到这条 RUN）。
 
 ## 2. 构建镜像（或用 CI 产物）
 

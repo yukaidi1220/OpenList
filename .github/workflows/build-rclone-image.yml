@@ -3,9 +3,10 @@
 # 触发：手动；或 push 到 main 且改动涉及驱动/Dockerfile（自动出图）。
 # 产物：ghcr.io/yukaidi1220/openlist-rclone:{latest,<run_number>}
 #
-# rclone 版本由 Dockerfile.rclone 的 RCLONE_DOWNLOAD_URL 决定（指向 rclone fork 的
-# release）。升级 rclone 时：fork 打新 tag → 等 release 资产就绪 → 改 Dockerfile
-# 版本号 → 本 workflow 自动触发（或手动）。
+# rclone 版本由 Dockerfile.rclone 的 RCLONE_DOWNLOAD_URL 决定，默认跟 fork 的
+# releases/latest（每次构建真下载，CI 没有层缓存）。所以升级 rclone 只要 fork 打新 tag
+# 等 release 转正，然后手动重跑本 workflow 即可——不用改 Dockerfile。要复现某个旧镜像
+# 就用 Dockerfile 里同名的 build-arg 钉住具体版本。
 name: build-rclone-image
 
 on:
