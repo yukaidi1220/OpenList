@@ -1,11 +1,9 @@
 package rclone
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	stdpath "path"
 	"strings"
 	"time"
@@ -52,14 +50,6 @@ func (d *Rclone) Init(ctx context.Context) error {
 	}
 	if strings.HasPrefix(d.RemoteName, "-") {
 		return errors.New("remote_name 不能以 - 开头（会被 rclone 当作 flag）")
-	}
-	if d.LinkViaExec {
-		if d.RcloneBin == "" {
-			return errors.New("启用 link_via_exec 时必须配置 rclone_bin")
-		}
-		if d.RcloneConf == "" {
-			return errors.New("启用 link_via_exec 时必须配置 rclone_conf（子进程的 remote 必须与 rcd 一致）")
-		}
 	}
 	d.client = newRCClient(d.Endpoint, d.RCUser, d.RCPassword)
 	// 用 about 校验 rcd 连通性与 remote 名称；再用根路径 list 校验 root_folder_path
@@ -146,38 +136,8 @@ func (d *Rclone) Link(ctx context.Context, file model.Obj, args model.LinkArgs) 
 		err = errors.New("rcd publiclink 返回了空 url")
 	}
 
-	// 回退：本地 rclone 子进程 `rclone link`（同一 publiclink 的 CLI 形态）
-	if d.LinkViaExec {
-		log.Debugf("[rclone] rc publiclink 失败，走 exec 回退: %v", err)
-		if u, e := d.linkViaExec(ctx, rpath); e == nil {
-			return &model.Link{URL: u}, nil
-		} else {
-			err = fmt.Errorf("%w; exec: %v", err, e)
-		}
-	}
-	return nil, fmt.Errorf("rcd 取链失败: %w", err)
+	return nil, fmt.Errorf("rcd 取链失败（publiclink）: %w", err)
 }
 
-// linkViaExec 通过本地 rclone 子进程执行 backend downloadurl（与 rc 主路径同一
 // 逻辑，都需要带 downloadurl 分发的 fork 构建）
-func (d *Rclone) linkViaExec(ctx context.Context, rpath string) (string, error) {
-	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(execCtx, d.RcloneBin, "--config", d.RcloneConf,
-		"link", d.fsName()+rpath)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("rclone link 执行失败: %w（stderr: %s）", err, strings.TrimSpace(stderr.String()))
-	}
-	for _, line := range strings.Split(stdout.String(), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
-			return line, nil
-		}
-	}
-	return "", fmt.Errorf("rclone link 输出不是链接: %q", strings.TrimSpace(stdout.String()))
-}
-
 var _ driver.Driver = (*Rclone)(nil)

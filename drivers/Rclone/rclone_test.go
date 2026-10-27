@@ -125,9 +125,6 @@ func TestRcloneDriverE2E(t *testing.T) {
 	d.RCPassword = os.Getenv("EEEOS_RCD_PASS")
 	d.RemoteName = os.Getenv("EEEOS_REMOTE")
 	d.RootFolderPath = os.Getenv("EEEOS_ROOT")
-	d.LinkViaExec = os.Getenv("EEEOS_RCLONE_BIN") != ""
-	d.RcloneBin = os.Getenv("EEEOS_RCLONE_BIN")
-	d.RcloneConf = os.Getenv("EEEOS_RCLONE_CONF")
 
 	ctx := context.Background()
 	if err := d.Init(ctx); err != nil {
