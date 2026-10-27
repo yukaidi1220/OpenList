@@ -276,7 +276,10 @@ func Link(ctx context.Context, storage driver.Driver, path string, args model.Li
 		if err != nil {
 			return nil, err
 		}
-		Cache.linkErrCache.DeleteKey(key + "/" + typeKey)
+		// TypedCache 是两级 map（entries[key][typeKey]），DeleteKey 只删外层 key，
+		// 传 "key/typeKey" 永远匹配不到、等于没删（审查发现）。这里删整个外层 key：
+		// 文件恢复正常时清掉它所有 redirect/proxy/IP/UA 变体的负向记录。
+		Cache.linkErrCache.DeleteKey(key)
 		if ol.policy.expiration != nil {
 			Cache.linkCache.SetTypeWithTTL(key, typeKey, ol, *ol.policy.expiration)
 		} else {

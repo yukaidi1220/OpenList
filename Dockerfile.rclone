@@ -23,9 +23,11 @@
 # rcd 分别限制，需拆双容器共享 network。
 
 ARG BASE_IMAGE_TAG=base
-FROM alpine:edge AS go-builder
+# 用官方 golang 镜像而非 alpine 的 apk go：版本可控（与 test_docker.yml 的
+# go-version-file 对齐），避免 edge 仓库里 go 版本漂移导致构建行为变化。
+FROM golang:1.26-alpine AS go-builder
 LABEL stage=go-builder
-RUN apk add --no-cache bash curl jq gcc git go musl-dev
+RUN apk add --no-cache bash curl jq gcc musl-dev git
 # go mod download 默认走 proxy.golang.org——本镜像的构建环境（GH runner、海外
 # 服务器）均可直连，无需设置 GOPROXY。目标服务器在国内时不要现场构建，直接
 # pull GHCR 镜像（ghcr.io/yukaidi1220/openlist-rclone）。

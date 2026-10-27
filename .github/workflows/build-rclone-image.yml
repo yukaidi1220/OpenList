@@ -62,6 +62,23 @@ jobs:
             /opt/rclone/rclone version | head -n 1
             id'
 
+      - name: 冒烟（容器内 rcd 活体）
+        run: |
+          # 上面只验了二进制存在；这里起容器验证 entrypoint 的 rcd 守护真的能拉起
+          docker run -d --name smoke             -e RUN_RCLONE=true -e RUN_RC_PORT=5572             -e RCLONE_RC_USER=smoke -e RCLONE_RC_PASS=smoke             ghcr.io/yukaidi1220/openlist-rclone:latest
+          for i in $(seq 1 20); do
+            sleep 2
+            if docker exec smoke sh -c 'wget -qO- http://127.0.0.1:5244/ping' 2>/dev/null | grep -q pong; then
+              echo "OK openlist 存活"
+              break
+            fi
+            [ "$i" = "20" ] && { echo "::error::openlist 未在 40 秒内就绪"; docker logs smoke; exit 1; }
+          done
+          sleep 6
+          docker exec smoke sh -c 'ps -ef | grep -c "[r]clone rcd"' | grep -q '^[1-9]' && echo "OK rcd 存活"
+          docker exec smoke sh -c 'cat /var/log/rcd.log 2>/dev/null | tail -3'
+          docker rm -f smoke
+
       - name: 推送 GHCR
         run: |
           docker push ghcr.io/yukaidi1220/openlist-rclone:latest

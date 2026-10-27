@@ -51,12 +51,8 @@ func linkTTLFor(rawURL string, now time.Time) time.Duration {
 		// 2) 不足 60 分钟：最多 20%
 		return time.Duration(float64(validity) * linkTTLShortRatio)
 	case validity < 180*time.Minute:
-		// 3) [60,180) 分钟：有效期 - 40 分钟
-		ttl := validity - linkTTLMidMargin
-		if ttl < 0 {
-			return linkTTLUnknown
-		}
-		return ttl
+		// 3) [60,180) 分钟：有效期 - 40 分钟（validity >= 60 保证结果 >= 20 分钟）
+		return validity - linkTTLMidMargin
 	default:
 		// 4) >= 180 分钟：最多 70%
 		return time.Duration(float64(validity) * linkTTLLongRatio)

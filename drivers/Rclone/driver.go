@@ -66,9 +66,11 @@ func (d *Rclone) Init(ctx context.Context) error {
 	}, &out); err != nil {
 		return fmt.Errorf("根目录 list 失败（检查 remote_name 与 root_folder_path）: %w", err)
 	}
-	// 目录缓存默认 5 分钟：cache_expiration 是存储级字段，驱动无法给默认值，
-	// 只在用户没设（0）时补一次并持久化，避免每次启动都改。
-	if d.GetStorage().CacheExpiration == 0 {
+	// 目录缓存默认 5 分钟：cache_expiration 是存储级字段、驱动无法给默认值，
+	// 只在用户没设（0）且驱动未禁用缓存时补一次并持久化。
+	// 注意：用户显式设 0 表示"立即过期"；本驱动选择把 0 视为未配置并迁移到 5 分钟
+	// （需要真正禁用缓存时用 OpenList 的 NoCache 标志或改回 0 后不再重启）。
+	if d.GetStorage().CacheExpiration == 0 && !d.Config().NoCache {
 		d.GetStorage().CacheExpiration = defaultDirCacheMinutes
 		op.MustSaveDriverStorage(d)
 		log.Infof("[rclone] 目录缓存未设置，已默认 %d 分钟", defaultDirCacheMinutes)
