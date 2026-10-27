@@ -23,8 +23,14 @@ on:
       - 'docker/rclone/**'
       - 'entrypoint.sh'
       - 'drivers/Rclone/**'
-      # op 层改动（缓存/取链逻辑）也影响镜像内 openlist 二进制
-      - 'internal/op/**'
+      # 镜像里的 openlist 是 RUN bash build.sh dev docker 现编的，所以源码、构建脚本、
+      # 依赖清单里任何变化都换二进制。internal/** 覆盖 op 层（目录缓存、取链、负向缓存），
+      # 也就是驱动实际用到的那些；build.sh / go.mod / go.sum 漏了就会出一个内容变了
+      # 却没重建的镜像。
+      - 'internal/**'
+      - 'build.sh'
+      - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/build-rclone-image.yml'
 
 permissions:
@@ -76,6 +82,10 @@ jobs:
         run: |
           # 上面只验了二进制存在；这里起容器验证 entrypoint 的 rcd 守护真的能拉起
           # entrypoint 读的是 RCLONE_RC_PORT；写错名字它不会报错，只是回落到默认 5572
+          #
+          # trap 兜住所有退出路径：下面任何一条断言失败都会在 `docker rm` 之前退出，
+          # 把容器留在 runner 上。runner 虽然是临时的，但留着它会让失败日志更难读。
+          trap 'docker rm -f smoke >/dev/null 2>&1 || true' EXIT
           docker run -d --name smoke -e RUN_RCLONE=true -e RCLONE_RC_PORT=5572 -e RCLONE_RC_USER=smoke -e RCLONE_RC_PASS=smoke ghcr.io/yukaidi1220/openlist-rclone:latest
           for i in $(seq 1 20); do
             sleep 2
@@ -88,7 +98,6 @@ jobs:
           sleep 6
           docker exec smoke sh -c 'ps -ef | grep -c "[r]clone rcd"' | grep -q '^[1-9]' && echo "OK rcd 存活"
           docker exec smoke sh -c 'cat /var/log/rcd.log 2>/dev/null | tail -3'
-          docker rm -f smoke
 
       - name: 推送 GHCR
         run: |

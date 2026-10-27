@@ -84,6 +84,9 @@ RUN (getent group ${USER} >/dev/null 2>&1 || addgroup -g ${GID} ${USER}) && \
 COPY --from=go-builder --chmod=755 --chown=${UID}:${GID} /app/bin/openlist ./
 COPY --chmod=755 --chown=${UID}:${GID} entrypoint.sh /entrypoint.sh
 COPY --from=rclone-fetcher --chmod=755 --chown=${UID}:${GID} /tmp/rclone /opt/rclone/rclone
+# 放在 stop/ 下而不是 start/：entrypoint 直接把 rcd 起在后台（见 entrypoint.sh 里
+# 的守护循环），若同时放进 start/，base 镜像的 runsvdir 会和它抢 5572 端口。
+# 这两个脚本是给想改用 runsv 托管的人留的现成件，运行时并不被执行。
 COPY --chmod=755 docker/rclone/run.rclone /opt/service/stop/rclone/run
 COPY --chmod=755 docker/rclone/finish.rclone /opt/service/stop/rclone/finish
 
